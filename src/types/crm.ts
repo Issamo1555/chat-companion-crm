@@ -1,0 +1,92 @@
+export type ClientStatus = 'new' | 'in_progress' | 'treated' | 'relaunched' | 'closed';
+
+export type UserRole = 'admin' | 'agent';
+
+export interface Agent {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  role: UserRole;
+  isActive: boolean;
+  clientCount: number;
+  createdAt: Date;
+}
+
+export interface Message {
+  id: string;
+  clientId: string;
+  content: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'document';
+  direction: 'inbound' | 'outbound';
+  timestamp: Date;
+  status: 'sent' | 'delivered' | 'read';
+}
+
+export interface StatusChange {
+  id: string;
+  clientId: string;
+  fromStatus: ClientStatus;
+  toStatus: ClientStatus;
+  changedBy: string;
+  changedAt: Date;
+  note?: string;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phoneNumber: string;
+  status: ClientStatus;
+  assignedAgentId?: string;
+  assignedAgent?: Agent;
+  tags: string[];
+  notes: string;
+  messages: Message[];
+  statusHistory: StatusChange[];
+  createdAt: Date;
+  updatedAt: Date;
+  lastMessageAt?: Date;
+}
+
+export interface DashboardStats {
+  totalClients: number;
+  newClients: number;
+  inProgressClients: number;
+  treatedClients: number;
+  relaunchedClients: number;
+  closedClients: number;
+  totalMessages: number;
+  averageResponseTime: number;
+  clientsByAgent: { agentName: string; count: number }[];
+  clientsByStatus: { status: ClientStatus; count: number }[];
+  activityByDay: { date: string; messages: number; newClients: number }[];
+}
+
+export interface ActionLog {
+  id: string;
+  userId: string;
+  userName: string;
+  action: string;
+  entityType: 'client' | 'agent' | 'message' | 'status';
+  entityId: string;
+  details?: string;
+  timestamp: Date;
+}
+
+export const STATUS_LABELS: Record<ClientStatus, string> = {
+  new: 'Nouveau',
+  in_progress: 'En cours',
+  treated: 'Traité',
+  relaunched: 'Relancé',
+  closed: 'Fermé',
+};
+
+export const STATUS_COLORS: Record<ClientStatus, string> = {
+  new: 'bg-status-new',
+  in_progress: 'bg-status-in-progress',
+  treated: 'bg-status-treated',
+  relaunched: 'bg-status-relaunched',
+  closed: 'bg-status-closed',
+};
