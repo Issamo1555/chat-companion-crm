@@ -2,7 +2,6 @@ import { useParams, Link } from 'react-router-dom';
 import MainLayout from '@/components/layout/MainLayout';
 import ChatWindow from '@/components/chat/ChatWindow';
 import StatusBadge from '@/components/clients/StatusBadge';
-import { mockClients, mockAgents } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -23,17 +22,75 @@ import {
   History,
   Edit2,
   Save,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ClientStatus, STATUS_LABELS } from '@/types/crm';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/services/api';
+
+// We need to fetch agents too for the dropdown, assume we duplicate the hook or pull from cache
+// For now, let's just fetch everything or leave agents mocked if we didn't implement getAgents fully in hooks yet.
+// Actually api.getAgents exists.
 
 const ClientDetail = () => {
   const { id } = useParams();
-  const client = mockClients.find((c) => c.id === id);
-  const [notes, setNotes] = useState(client?.notes || '');
+  const queryClient = useQueryClient();
+
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: api.getClients,
+  });
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ['agents'],
+    queryFn: api.getAgents,
+  });
+
+  // In a real app we might fetch just one client by ID, but since we have getClients which fetches all with details...
+  const client = clients.find((c) => c.id === id);
+
+  const [notes, setNotes] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
+
+  // Sync state when client loads
+  useEffect(() => {
+    if (client) {
+      setNotes(client.notes || '');
+    }
+  }, [client]);
+
+  const sendMessageMutation = useMutation({
+    mutationFn: async (content: string) => {
+      if (!id) return;
+      return api.sendMessage(id, content, 'outbound');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async (status: ClientStatus) => {
+      if (!id) return;
+      return api.updateClientStatus(id, status, 'Status update from detail page', '1'); // '1' is hardcoded user id for now
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    }
+  });
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </MainLayout>
+    );
+  }
 
   if (!client) {
     return (
@@ -51,9 +108,12 @@ const ClientDetail = () => {
   }
 
   const handleSendMessage = (content: string) => {
-    console.log('Sending message:', content);
-    // In real app, this would call an API
+    sendMessageMutation.mutate(content);
   };
+
+  const handleStatusChange = (value: ClientStatus) => {
+    updateStatusMutation.mutate(value);
+  }
 
   return (
     <MainLayout>
@@ -101,7 +161,7 @@ const ClientDetail = () => {
                   <label className="text-sm font-medium text-muted-foreground mb-2 block">
                     Statut
                   </label>
-                  <Select defaultValue={client.status}>
+                  <Select defaultValue={client.status} onValueChange={(val) => handleStatusChange(val as ClientStatus)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -126,7 +186,7 @@ const ClientDetail = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockAgents.map((agent) => (
+                      {agents.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id}>
                           {agent.name}
                         </SelectItem>
@@ -164,14 +224,14 @@ const ClientDetail = () => {
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Créé le</span>
                     <span className="font-medium">
-                      {format(client.createdAt, 'dd/MM/yyyy', { locale: fr })}
+                      {format(new Date(client.createdAt), 'dd/MM/yyyy', { locale: fr })}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Mis à jour le</span>
                     <span className="font-medium">
-                      {format(client.updatedAt, 'dd/MM/yyyy', { locale: fr })}
+                      {format(new Date(client.updatedAt), 'dd/MM/yyyy', { locale: fr })}
                     </span>
                   </div>
                 </div>
@@ -191,7 +251,7 @@ const ClientDetail = () => {
                       size="sm"
                       onClick={() => {
                         if (isEditingNotes) {
-                          // Save notes
+                          // Save notes logic would go here
                           console.log('Saving notes:', notes);
                         }
                         setIsEditingNotes(!isEditingNotes);
@@ -234,7 +294,7 @@ const ClientDetail = () => {
                     </label>
                   </div>
                   <div className="space-y-3">
-                    {client.statusHistory.length > 0 ? (
+                    {client.statusHistory && client.statusHistory.length > 0 ? (
                       client.statusHistory.map((change) => (
                         <div
                           key={change.id}
@@ -246,8 +306,8 @@ const ClientDetail = () => {
                               {STATUS_LABELS[change.toStatus]}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Par {change.changedBy} •{' '}
-                              {format(change.changedAt, 'dd/MM/yyyy HH:mm', {
+                              Par {change.changedBy || 'Système'} •{' '}
+                              {format(new Date(change.changedAt), 'dd/MM/yyyy HH:mm', {
                                 locale: fr,
                               })}
                             </p>

@@ -1,73 +1,93 @@
-# Welcome to your Lovable project
+# BEQ CRM WhatsApp
 
-## Project info
+Application de gestion de relation client (CRM) avec intégration WhatsApp.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Technologies utilisées
 
-## How can I edit this code?
+Ce projet est construit avec :
 
-There are several ways of editing your application.
+- **Vite** - Build tool rapide
+- **TypeScript** - Typage statique
+- **React** - Framework UI
+- **shadcn-ui** - Composants UI
+- **Tailwind CSS** - Framework CSS
+- **Prisma** - ORM pour base de données
+- **Express** - Serveur backend
+- **Baileys** - Intégration WhatsApp
+- **Socket.io** - Communication temps réel
 
-**Use Lovable**
+## Installation
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### Prérequis
 
-Changes made via Lovable will be committed automatically to this repo.
+- Node.js (version 18 ou supérieure)
+- npm ou bun
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+### Étapes d'installation
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
+# 1. Cloner le repository
 git clone <YOUR_GIT_URL>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# 2. Naviguer dans le répertoire du projet
+cd beq-crm-whatsup
 
-# Step 3: Install the necessary dependencies.
-npm i
+# 3. Installer les dépendances
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 4. Configurer les variables d'environnement
+cp .env.example .env
+# Éditer .env avec vos configurations
+
+# 5. Initialiser la base de données
+npx prisma migrate dev
+npx prisma db seed
+
+# 6. Démarrer le serveur de développement
 npm run dev
+
+# 7. Dans un autre terminal, démarrer le serveur backend
+npm run start:server
 ```
 
-**Edit a file directly in GitHub**
+## Scripts disponibles
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- `npm run dev` - Démarre le serveur de développement frontend (port 8080)
+- `npm run start:server` - Démarre le serveur backend Express
+- `npm run build` - Compile le projet pour la production
+- `npm run preview` - Prévisualise la version de production
+- `npm test` - Lance les tests
+- `npm run lint` - Vérifie le code avec ESLint
 
-**Use GitHub Codespaces**
+## Structure du projet
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```
+beq-crm-whatsup/
+├── src/                    # Code source frontend
+│   ├── components/         # Composants React
+│   ├── pages/             # Pages de l'application
+│   ├── contexts/          # Contextes React
+│   └── types/             # Types TypeScript
+├── server/                # Code serveur backend
+├── prisma/                # Schéma et migrations de base de données
+├── database/              # Scripts SQL
+└── public/                # Fichiers statiques
+```
 
-## What technologies are used for this project?
+## Fonctionnalités
 
-This project is built with:
+- 📊 Dashboard avec statistiques en temps réel
+- 💬 Intégration WhatsApp pour la messagerie
+- 👥 Gestion des clients et agents
+- 📈 Graphiques de performance
+- 🔐 Authentification sécurisée
+- 📝 Logs d'activité
+- ⚙️ Paramètres configurables
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Déploiement
 
-## How can I deploy this project?
+Consultez le fichier `DEPLOYMENT.md` pour les instructions de déploiement.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Licence
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Propriétaire - BEQ

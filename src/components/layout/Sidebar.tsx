@@ -4,11 +4,14 @@ import {
   LayoutDashboard,
   Users,
   MessageSquare,
-  UserCog,
+  UserCircle,
   Settings,
   LogOut,
-  Phone,
+  UserCog,
+  ClipboardList,
 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 interface SidebarProps {
   isAdmin?: boolean;
@@ -16,12 +19,24 @@ interface SidebarProps {
 
 const Sidebar = ({ isAdmin = true }: SidebarProps) => {
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success('Déconnexion réussie');
+    } catch (error) {
+      toast.error('Erreur lors de la déconnexion');
+    }
+  };
 
   const navigation = [
     { name: 'Tableau de bord', href: '/', icon: LayoutDashboard, adminOnly: true },
     { name: 'Clients', href: '/clients', icon: Users, adminOnly: false },
     { name: 'Conversations', href: '/conversations', icon: MessageSquare, adminOnly: false },
-    { name: 'Agents', href: '/agents', icon: UserCog, adminOnly: true },
+    { name: 'Équipe', href: '/team', icon: UserCircle, adminOnly: true },
+    { name: 'Utilisateurs', href: '/users', icon: UserCog, adminOnly: true },
+    { name: 'Logs', href: '/logs', icon: ClipboardList, adminOnly: true },
     { name: 'Paramètres', href: '/settings', icon: Settings, adminOnly: false },
   ];
 
@@ -29,16 +44,27 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
     (item) => !item.adminOnly || isAdmin
   );
 
+  // Get user initials
+  const getUserInitials = () => {
+    if (!user) return '??';
+    return user.name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return (
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar">
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 px-6 border-b border-sidebar-border">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent">
-          <Phone className="h-5 w-5 text-accent-foreground" />
+        <div className="flex h-10 w-10 items-center justify-center">
+          <img src="/beq-logo.png" alt="BEQ Logo" className="h-10 w-10 object-contain" />
         </div>
         <div>
-          <h1 className="text-lg font-bold text-sidebar-foreground">WhatsApp CRM</h1>
-          <p className="text-xs text-sidebar-foreground/60">Gestion clients</p>
+          <h1 className="text-lg font-bold text-sidebar-foreground">BEQ CRM</h1>
+          <p className="text-xs text-sidebar-foreground/60">WhatsApp Business</p>
         </div>
       </div>
 
@@ -68,15 +94,19 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
       <div className="border-t border-sidebar-border p-4">
         <div className="flex items-center gap-3 rounded-lg px-3 py-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sidebar-accent text-sm font-semibold text-sidebar-foreground">
-            SB
+            {getUserInitials()}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-sidebar-foreground truncate">
-              Sophie Bernard
+              {user?.name || 'Utilisateur'}
             </p>
-            <p className="text-xs text-sidebar-foreground/60">Admin</p>
+            <p className="text-xs text-sidebar-foreground/60 capitalize">{user?.role || 'Agent'}</p>
           </div>
-          <button className="p-1.5 rounded-lg hover:bg-sidebar-accent text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded-lg hover:bg-sidebar-accent text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+            title="Se déconnecter"
+          >
             <LogOut className="h-4 w-4" />
           </button>
         </div>

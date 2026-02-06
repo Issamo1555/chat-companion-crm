@@ -1,30 +1,68 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import ChatWindow from '@/components/chat/ChatWindow';
 import StatusBadge from '@/components/clients/StatusBadge';
-import { mockClients } from '@/data/mockData';
 import { Input } from '@/components/ui/input';
-import { Search, MessageSquare } from 'lucide-react';
+import { Search, MessageSquare, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/services/api';
+import { socketService } from '@/services/socket';
 
 const Conversations = () => {
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(
-    mockClients[0]?.id || null
-  );
+  const queryClient = useQueryClient();
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const filteredClients = mockClients.filter(
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: api.getClients,
+  });
+
+  // Select first client valid when data loads if none selected
+  useEffect(() => {
+    if (clients.length > 0 && !selectedClientId) {
+      setSelectedClientId(clients[0].id);
+    }
+  }, [clients, selectedClientId]);
+
+  // Listen for real-time messages
+  useEffect(() => {
+    const handleNewMessage = (data: any) => {
+      console.log('📨 New message received via Socket.IO:', data);
+      // Invalidate clients query to refresh the list
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    };
+
+    socketService.on('message:new', handleNewMessage);
+
+    return () => {
+      socketService.off('message:new', handleNewMessage);
+    };
+  }, [queryClient]);
+
+  const sendMessageMutation = useMutation({
+    mutationFn: async (content: string) => {
+      if (!selectedClientId) return;
+      return api.sendMessage(selectedClientId, content, 'outbound');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    },
+  });
+
+  const filteredClients = clients.filter(
     (client) =>
       client.name.toLowerCase().includes(search.toLowerCase()) ||
       client.phoneNumber.includes(search)
   );
 
-  const selectedClient = mockClients.find((c) => c.id === selectedClientId);
+  const selectedClient = clients.find((c) => c.id === selectedClientId);
 
   const handleSendMessage = (content: string) => {
-    console.log('Sending message to', selectedClientId, ':', content);
+    sendMessageMutation.mutate(content);
   };
 
   return (
@@ -48,51 +86,63 @@ const Conversations = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {filteredClients.map((client) => {
-              const lastMessage = client.messages[client.messages.length - 1];
-              const isSelected = client.id === selectedClientId;
+            {isLoading ? (
+              <div className="flex items-center justify-center h-20">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredClients.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground text-sm">
+                Aucune conversation trouvée
+              </div>
+            ) : (
+              filteredClients.map((client) => {
+                const lastMessage = client.messages && client.messages.length > 0
+                  ? client.messages[client.messages.length - 1]
+                  : null;
+                const isSelected = client.id === selectedClientId;
 
-              return (
-                <button
-                  key={client.id}
-                  onClick={() => setSelectedClientId(client.id)}
-                  className={cn(
-                    'w-full text-left p-4 border-b border-border transition-colors',
-                    isSelected
-                      ? 'bg-accent/10 border-l-2 border-l-accent'
-                      : 'hover:bg-secondary/50'
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold shrink-0">
-                      {client.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-medium text-foreground truncate">
-                          {client.name}
-                        </h3>
-                        {lastMessage && (
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {formatDistanceToNow(lastMessage.timestamp, {
-                              addSuffix: false,
-                              locale: fr,
-                            })}
-                          </span>
-                        )}
+                return (
+                  <button
+                    key={client.id}
+                    onClick={() => setSelectedClientId(client.id)}
+                    className={cn(
+                      'w-full text-left p-4 border-b border-border transition-colors',
+                      isSelected
+                        ? 'bg-accent/10 border-l-2 border-l-accent'
+                        : 'hover:bg-secondary/50'
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold shrink-0">
+                        {client.name.charAt(0).toUpperCase()}
                       </div>
-                      {lastMessage && (
-                        <p className="text-sm text-muted-foreground truncate mt-0.5">
-                          {lastMessage.direction === 'outbound' && 'Vous: '}
-                          {lastMessage.content}
-                        </p>
-                      )}
-                      <StatusBadge status={client.status} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="font-medium text-foreground truncate">
+                            {client.name}
+                          </h3>
+                          {lastMessage && (
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatDistanceToNow(new Date(lastMessage.timestamp), {
+                                addSuffix: false,
+                                locale: fr,
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        {lastMessage && (
+                          <p className="text-sm text-muted-foreground truncate mt-0.5">
+                            {lastMessage.direction === 'outbound' && 'Vous: '}
+                            {lastMessage.content}
+                          </p>
+                        )}
+                        <StatusBadge status={client.status} size="sm" />
+                      </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 

@@ -22,3 +22,29 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+/generated/prisma
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Database files
+*.db
+*.db-journal
+prisma/dev.db
+database/
+
+# WhatsApp authentication
+whatsapp-auth/
+*.session
+
+# Scripts with sensitive data
+prisma/create-user.ts
+prisma/add-passwords.ts
+prisma/check-user.ts
+prisma/reset-password.ts
+
+# Build artifacts
+.npm-cache/

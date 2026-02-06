@@ -14,13 +14,16 @@ import {
 import {
   Building,
   Bell,
-  Key,
-  Webhook,
   Download,
   Upload,
 } from 'lucide-react';
+import WhatsAppSettings from '@/components/settings/WhatsAppSettings';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Settings = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   return (
     <MainLayout>
       <div className="space-y-6 max-w-4xl">
@@ -36,8 +39,8 @@ const Settings = () => {
           <TabsList className="mb-6">
             <TabsTrigger value="general">Général</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="api">API WhatsApp</TabsTrigger>
-            <TabsTrigger value="import-export">Import/Export</TabsTrigger>
+            {isAdmin && <TabsTrigger value="api">API WhatsApp</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="import-export">Import/Export</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="general">
@@ -127,103 +130,66 @@ const Settings = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="api">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Key className="h-5 w-5 text-muted-foreground" />
-                  <CardTitle>WhatsApp Business API</CardTitle>
-                </div>
-                <CardDescription>
-                  Configurez votre connexion à l'API WhatsApp Business
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone-id">Phone Number ID</Label>
-                  <Input id="phone-id" placeholder="Votre Phone Number ID" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="business-id">Business Account ID</Label>
-                  <Input id="business-id" placeholder="Votre Business Account ID" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="access-token">Access Token</Label>
-                  <Input
-                    id="access-token"
-                    type="password"
-                    placeholder="Votre Access Token"
-                  />
-                </div>
-                <div className="rounded-lg border border-border p-4 bg-secondary/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Webhook className="h-4 w-4 text-muted-foreground" />
-                    <p className="font-medium">Webhook URL</p>
-                  </div>
-                  <code className="text-sm text-muted-foreground break-all">
-                    https://votre-domaine.com/api/webhook/whatsapp
-                  </code>
-                </div>
-                <div className="flex gap-3">
-                  <Button>Sauvegarder</Button>
-                  <Button variant="outline">Tester la connexion</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {isAdmin && (
+            <TabsContent value="api">
+              <WhatsAppSettings />
+            </TabsContent>
+          )}
 
-          <TabsContent value="import-export">
-            <div className="grid gap-6 sm:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Download className="h-5 w-5 text-muted-foreground" />
-                    <CardTitle>Exporter</CardTitle>
-                  </div>
-                  <CardDescription>
-                    Téléchargez vos données au format CSV ou Excel
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <Download className="h-4 w-4" />
-                    Exporter clients (CSV)
-                  </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <Download className="h-4 w-4" />
-                    Exporter clients (Excel)
-                  </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <Download className="h-4 w-4" />
-                    Exporter conversations
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Upload className="h-5 w-5 text-muted-foreground" />
-                    <CardTitle>Importer</CardTitle>
-                  </div>
-                  <CardDescription>
-                    Importez des données depuis un fichier
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                    <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Glissez un fichier CSV ou Excel ici
-                    </p>
-                    <Button variant="outline" size="sm">
-                      Parcourir
+          {isAdmin && (
+            <TabsContent value="import-export">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Download className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle>Exporter</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Téléchargez vos données au format CSV ou Excel
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Button variant="outline" className="w-full justify-start gap-2">
+                      <Download className="h-4 w-4" />
+                      Exporter clients (CSV)
                     </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+                    <Button variant="outline" className="w-full justify-start gap-2">
+                      <Download className="h-4 w-4" />
+                      Exporter clients (Excel)
+                    </Button>
+                    <Button variant="outline" className="w-full justify-start gap-2">
+                      <Download className="h-4 w-4" />
+                      Exporter conversations
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Upload className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle>Importer</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Importez des données depuis un fichier
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                      <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Glissez un fichier CSV ou Excel ici
+                      </p>
+                      <Button variant="outline" size="sm">
+                        Parcourir
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </MainLayout>
