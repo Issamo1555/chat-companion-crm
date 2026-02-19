@@ -115,6 +115,20 @@ const ClientDetail = () => {
     updateStatusMutation.mutate(value);
   }
 
+  const updateClientMutation = useMutation({
+    mutationFn: async (data: Partial<typeof client>) => {
+      if (!id) return;
+      return api.updateClient(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    }
+  });
+
+  const handleSaveField = (field: string, value: string | undefined) => {
+    updateClientMutation.mutate({ [field]: value });
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -216,6 +230,78 @@ const ClientDetail = () => {
                       + Ajouter
                     </Button>
                   </div>
+                </div>
+
+                {/* Email */}
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-muted-foreground block">
+                      Email
+                    </label>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleSaveField('email', client.email)}>
+                      <Save className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <input
+                    className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm font-medium"
+                    defaultValue={client.email || ''}
+                    onBlur={(e) => handleSaveField('email', e.target.value)}
+                    placeholder="Ajouter un email"
+                  />
+                </div>
+
+                {/* Company */}
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-muted-foreground block">
+                      Entreprise
+                    </label>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleSaveField('company', client.company)}>
+                      <Save className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <input
+                    className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm font-medium"
+                    defaultValue={client.company || ''}
+                    onBlur={(e) => handleSaveField('company', e.target.value)}
+                    placeholder="Ajouter une entreprise"
+                  />
+                </div>
+
+                {/* Address */}
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-muted-foreground block">
+                      Adresse
+                    </label>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleSaveField('address', client.address)}>
+                      <Save className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <input
+                    className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm font-medium"
+                    defaultValue={client.address || ''}
+                    onBlur={(e) => handleSaveField('address', e.target.value)}
+                    placeholder="Ajouter une adresse"
+                  />
+                </div>
+
+                {/* Source */}
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-muted-foreground block">
+                      Source
+                    </label>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleSaveField('source', client.source)}>
+                      <Save className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <input
+                    className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm font-medium"
+                    defaultValue={client.source || ''}
+                    onBlur={(e) => handleSaveField('source', e.target.value)}
+                    placeholder="Ajouter une source"
+                  />
                 </div>
 
                 {/* Created/Updated */}

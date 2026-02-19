@@ -1,6 +1,7 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { socketService } from '@/services/socket';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -8,7 +9,19 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading, token } = useAuth();
+
+    useEffect(() => {
+        if (isAuthenticated && token) {
+            // Connect to socket with auth token
+            socketService.connect('http://localhost:3000', token);
+        }
+
+        return () => {
+            // Disconnect when component unmounts (logout/navigating away from protected routes)
+            socketService.disconnect();
+        };
+    }, [isAuthenticated, token]);
 
     if (isLoading) {
         return (

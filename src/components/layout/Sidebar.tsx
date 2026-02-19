@@ -35,7 +35,6 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
     { name: 'Clients', href: '/clients', icon: Users, adminOnly: false },
     { name: 'Conversations', href: '/conversations', icon: MessageSquare, adminOnly: false },
     { name: 'Équipe', href: '/team', icon: UserCircle, adminOnly: true },
-    { name: 'Utilisateurs', href: '/users', icon: UserCog, adminOnly: true },
     { name: 'Logs', href: '/logs', icon: ClipboardList, adminOnly: true },
     { name: 'Paramètres', href: '/settings', icon: Settings, adminOnly: false },
   ];

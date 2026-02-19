@@ -7,7 +7,7 @@ import { fr } from 'date-fns/locale';
 
 interface ChatWindowProps {
   client: Client;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string | File) => void;
 }
 
 const ChatWindow = ({ client, onSendMessage }: ChatWindowProps) => {
@@ -24,16 +24,22 @@ const ChatWindow = ({ client, onSendMessage }: ChatWindowProps) => {
     }
   }, [messages]);
 
-  const handleSend = (content: string) => {
-    const newMessage: Message = {
-      id: `m${Date.now()}`,
-      clientId: client.id,
-      content,
-      direction: 'outbound',
-      timestamp: new Date(),
-      status: 'sent',
-    };
-    setMessages((prev) => [...prev, newMessage]);
+  const handleSend = (content: string | File) => {
+    // If it's a file, we can't easily optimistically add it without an upload
+    // For now, let's just trigger the send handler and let the parent/socket handle the update
+    // Or we could create a temporary blob URL for preview
+    if (typeof content === 'string') {
+      const newMessage: Message = {
+        id: `m${Date.now()}`,
+        clientId: client.id,
+        content,
+        direction: 'outbound',
+        timestamp: new Date(),
+        status: 'sent',
+      };
+      setMessages((prev) => [...prev, newMessage]);
+    }
+
     onSendMessage(content);
   };
 

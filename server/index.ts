@@ -3,6 +3,9 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import {
   initializeWhatsApp,
   sendWhatsAppMessage,
@@ -19,6 +22,8 @@ import {
   deleteSession,
 } from './auth';
 import { requireAuth, requireRole } from './middleware/auth';
+import { socketManager } from './services/socketManager';
+import { assignmentService } from './services/assignment';
 
 const app = express();
 const httpServer = createServer(app);
@@ -29,11 +34,32 @@ const io = new Server(httpServer, {
   },
 });
 
+// Initialize Socket Manager
+socketManager.initialize(io);
+
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 
+// Multer configuration
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'uploads';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir);
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage });
+
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
 
 // ============================================
 // Authentication API
@@ -274,14 +300,89 @@ app.get('/api/admin/activity-logs', requireAuth, requireRole('admin'), async (re
   }
 });
 
+// Create new user (Admin only)
 app.post('/api/users', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const user = await prisma.user.create({
-      data: req.body,
+    const { name, email, password, role = 'agent' } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
     });
+
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        passwordHash,
+        role,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      }
+    });
+
+    res.status(201).json(user);
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Update user details (Admin only)
+app.put('/api/users/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, role } = req.body;
+
+    if (email) {
+      const existingUser = await prisma.user.findFirst({
+        where: { email, NOT: { id } }
+      });
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email already in use' });
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(email && { email }),
+        ...(role && { role }),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      }
+    });
+
     res.json(user);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create user' });
+    console.error('Update user error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
@@ -470,7 +571,36 @@ app.get('/api/clients', requireAuth, async (req, res) => {
 
 app.post('/api/clients', requireAuth, async (req, res) => {
   try {
-    const client = await prisma.client.create({
+    let client = await prisma.client.create({
+      data: {
+        ...req.body,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Attempt Round Robin assignment
+    client = await assignmentService.assignClient(client);
+
+    // If assigned, we might want to notify via socket (optional, but good)
+    if (client.assignedAgentId) {
+      socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
+    }
+
+    // Also emit to admins or general update
+    socketManager.emitToAll('client:new', client);
+
+    res.json(client);
+  } catch (error) {
+    console.error('Create client error:', error);
+    res.status(500).json({ error: 'Failed to create client' });
+  }
+});
+
+app.patch('/api/clients/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const client = await prisma.client.update({
+      where: { id },
       data: {
         ...req.body,
         updatedAt: new Date(),
@@ -478,7 +608,7 @@ app.post('/api/clients', requireAuth, async (req, res) => {
     });
     res.json(client);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create client' });
+    res.status(500).json({ error: 'Failed to update client' });
   }
 });
 
@@ -596,6 +726,80 @@ app.post('/api/clients/:id/status', requireAuth, async (req, res) => {
   }
 });
 
+// Send Media Message
+app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    const { clientId, direction = 'outbound' } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Determine media type
+    const mimeType = file.mimetype;
+    let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+
+    if (mimeType.startsWith('image/')) mediaType = 'image';
+    else if (mimeType.startsWith('video/')) mediaType = 'video';
+    else if (mimeType.startsWith('audio/')) mediaType = 'audio';
+
+    const mediaUrl = `/uploads/${file.filename}`;
+
+    // Get client to retrieve phone number
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+    });
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // If outbound, send via WhatsApp
+    if (direction === 'outbound') {
+      const sent = await sendWhatsAppMedia(
+        client.phoneNumber,
+        file.path,
+        '', // Caption could be added here if supported in frontend
+        mediaType
+      );
+
+      if (!sent) {
+        return res.status(500).json({ error: 'Failed to send WhatsApp media' });
+      }
+    }
+
+    const message = await prisma.message.create({
+      data: {
+        clientId,
+        content: `[${mediaType.toUpperCase()}]`,
+        mediaUrl,
+        mediaType,
+        direction,
+        status: 'sent',
+        timestamp: new Date(),
+      },
+    });
+
+    // Update client's last interaction
+    await prisma.client.update({
+      where: { id: clientId },
+      data: {
+        lastMessageAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    // Emit to connected clients via Socket.IO
+    io.emit('message:new', { clientId, message });
+
+    res.json(message);
+  } catch (error) {
+    console.error('Error sending media:', error);
+    res.status(500).json({ error: 'Failed to send media message' });
+  }
+});
+
 // ============================================
 // Dashboard API (Protected)
 // ============================================
@@ -629,8 +833,38 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
             `
     ]);
 
-    // Calculate average response time (mock logic for now as it's complex SQL)
-    const averageResponseTime = 15;
+    // Calculate average response time
+    // Find all inbound messages
+    const inboundMessages = await prisma.message.findMany({
+      where: { direction: 'inbound' },
+      orderBy: { timestamp: 'asc' },
+      select: { clientId: true, timestamp: true }
+    });
+
+    let totalResponseTime = 0;
+    let responseCount = 0;
+
+    // For each inbound message, find the first subsequent outbound message for the same client
+    for (const inbound of inboundMessages) {
+      const firstReply = await prisma.message.findFirst({
+        where: {
+          clientId: inbound.clientId,
+          direction: 'outbound',
+          timestamp: { gt: inbound.timestamp }
+        },
+        orderBy: { timestamp: 'asc' },
+        select: { timestamp: true }
+      });
+
+      if (firstReply) {
+        const diffInMinutes = (firstReply.timestamp.getTime() - inbound.timestamp.getTime()) / (1000 * 60);
+        // Filter out unreasonable outliers if necessary, e.g., > 48 hours, but for now keep all
+        totalResponseTime += diffInMinutes;
+        responseCount++;
+      }
+    }
+
+    const averageResponseTime = responseCount > 0 ? Math.round(totalResponseTime / responseCount) : 0;
 
     // Clients by Agent
     const clientsByAgent = users.map(user => ({

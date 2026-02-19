@@ -11,9 +11,12 @@ import {
 
 interface AgentCardProps {
   agent: Agent;
+  onEdit?: (agent: Agent) => void;
+  onViewClients?: (agent: Agent) => void;
+  onDeactivate?: (agent: Agent) => void;
 }
 
-const AgentCard = ({ agent }: AgentCardProps) => {
+const AgentCard = ({ agent, onEdit, onViewClients, onDeactivate }: AgentCardProps) => {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:shadow-lg">
       <div className="flex items-start justify-between">
@@ -36,10 +39,17 @@ const AgentCard = ({ agent }: AgentCardProps) => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Modifier</DropdownMenuItem>
-            <DropdownMenuItem>Voir les clients</DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              Désactiver
+            <DropdownMenuItem onClick={() => onEdit?.(agent)}>
+              Modifier
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onViewClients?.(agent)}>
+              Voir les clients
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={() => onDeactivate?.(agent)}
+            >
+              {agent.isActive ? 'Désactiver' : 'Activer'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -52,7 +62,7 @@ const AgentCard = ({ agent }: AgentCardProps) => {
           </Badge>
           <Badge
             variant="outline"
-            className={agent.isActive ? 'border-status-treated text-status-treated' : 'border-status-closed text-status-closed'}
+            className={agent.isActive ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}
           >
             {agent.isActive ? 'Actif' : 'Inactif'}
           </Badge>

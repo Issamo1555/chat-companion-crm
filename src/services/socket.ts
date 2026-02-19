@@ -4,7 +4,7 @@ class SocketService {
     private socket: Socket | null = null;
     private listeners: Map<string, Function[]> = new Map();
 
-    connect(url: string = 'http://localhost:3000') {
+    connect(url: string = 'http://localhost:3000', token?: string) {
         if (this.socket?.connected) {
             console.log('Socket already connected');
             return;
@@ -15,6 +15,9 @@ class SocketService {
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionAttempts: 5,
+            auth: {
+                token
+            }
         });
 
         this.socket.on('connect', () => {

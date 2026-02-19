@@ -44,7 +44,7 @@ const Conversations = () => {
   }, [queryClient]);
 
   const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async (content: string | File) => {
       if (!selectedClientId) return;
       return api.sendMessage(selectedClientId, content, 'outbound');
     },
@@ -61,7 +61,7 @@ const Conversations = () => {
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
 
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = (content: string | File) => {
     sendMessageMutation.mutate(content);
   };
 

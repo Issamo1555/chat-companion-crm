@@ -1,4 +1,5 @@
-import makeWASocket, {
+import {
+    makeWASocket,
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
@@ -6,12 +7,15 @@ import makeWASocket, {
     WAMessage,
     proto,
     getContentType,
+    downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import P from 'pino';
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import { assignmentService } from './services/assignment';
+import { socketManager } from './services/socketManager';
 
 const prisma = new PrismaClient();
 
@@ -26,10 +30,14 @@ let connectedPhoneNumber: string | null = null;
 
 // Auth folder
 const AUTH_FOLDER = path.join(process.cwd(), 'whatsapp-auth');
+const UPLOADS_FOLDER = path.join(process.cwd(), 'uploads');
 
-// Ensure auth folder exists
+// Ensure folders exist
 if (!fs.existsSync(AUTH_FOLDER)) {
     fs.mkdirSync(AUTH_FOLDER, { recursive: true });
+}
+if (!fs.existsSync(UPLOADS_FOLDER)) {
+    fs.mkdirSync(UPLOADS_FOLDER, { recursive: true });
 }
 
 // Event emitter for real-time updates
@@ -146,22 +154,59 @@ async function handleIncomingMessage(msg: WAMessage) {
             content = msg.message.conversation || '';
         } else if (messageType === 'extendedTextMessage') {
             content = msg.message.extendedTextMessage?.text || '';
-        } else if (messageType === 'imageMessage') {
-            content = msg.message.imageMessage?.caption || '[Image]';
-            mediaType = 'image';
-            // TODO: Download and save media
-        } else if (messageType === 'videoMessage') {
-            content = msg.message.videoMessage?.caption || '[Video]';
-            mediaType = 'video';
-        } else if (messageType === 'documentMessage') {
-            content = msg.message.documentMessage?.fileName || '[Document]';
-            mediaType = 'document';
-        } else if (messageType === 'audioMessage') {
-            content = '[Audio]';
-            mediaType = 'audio';
+        } else if (
+            messageType === 'imageMessage' ||
+            messageType === 'videoMessage' ||
+            messageType === 'audioMessage' ||
+            messageType === 'documentMessage'
+        ) {
+            // Download media
+            const buffer = await downloadMediaMessage(
+                msg,
+                'buffer',
+                {},
+                {
+                    logger,
+                    reuploadRequest: sock ? (msg: WAMessage) => sock!.updateMediaMessage(msg) : undefined
+                } as any
+            );
+
+            // Determine extension and type
+            let extension = '';
+            if (messageType === 'imageMessage') {
+                content = msg.message.imageMessage?.caption || '[Image]';
+                mediaType = 'image';
+                extension = 'jpg'; // Default, maybe improve based on mimetype
+            } else if (messageType === 'videoMessage') {
+                content = msg.message.videoMessage?.caption || '[Video]';
+                mediaType = 'video';
+                extension = 'mp4';
+            } else if (messageType === 'audioMessage') {
+                content = '[Audio]';
+                mediaType = 'audio';
+                extension = 'mp3'; // WhatsApp audio usually ogg/mp4/aac, saving as mp3/ogg might need check
+                // For simplicity, let's trust browsers can play it or just download
+                // Actually whatsapp audios are often .ogg.
+                extension = 'ogg';
+            } else if (messageType === 'documentMessage') {
+                content = msg.message.documentMessage?.fileName || '[Document]';
+                mediaType = 'document';
+                extension = path.extname(msg.message.documentMessage?.fileName || '').replace('.', '') || 'bin';
+            }
+
+            // Save file
+            const fileName = `${Date.now()}_${Math.round(Math.random() * 1000)}.${extension}`;
+            const filePath = path.join(UPLOADS_FOLDER, fileName);
+            fs.writeFileSync(filePath, buffer);
+
+            mediaUrl = `/uploads/${fileName}`;
+            console.log(`📥 Media saved: ${mediaUrl}`);
+        } else {
+            // Unsupported type
+            return;
         }
 
-        if (!content) return;
+        if (!content && !mediaUrl) return;
 
         // Find or create client
         let client = await prisma.client.findFirst({
@@ -180,6 +225,16 @@ async function handleIncomingMessage(msg: WAMessage) {
                     lastMessageAt: new Date(),
                 },
             });
+
+            // Round Robin Assignment
+            client = await assignmentService.assignClient(client);
+
+            // Notify assigned agent
+            if (client.assignedAgentId) {
+                socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
+            }
+            // Notify all (for admin dashboards etc)
+            socketManager.emitToAll('client:new', client);
 
             console.log(`✨ New client created: ${contactName} (${phoneNumber})`);
         } else {

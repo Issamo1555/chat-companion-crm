@@ -26,6 +26,39 @@ const ChatBubble = ({ message }: ChatBubbleProps) => {
             : 'bg-whatsapp-bubble-in border border-border rounded-tl-sm'
         )}
       >
+        {message.mediaType === 'image' && message.mediaUrl && (
+          <img
+            src={`http://localhost:3000${message.mediaUrl}`}
+            alt={message.content || 'Image'}
+            className="mb-2 max-w-full rounded-lg"
+          />
+        )}
+        {message.mediaType === 'video' && message.mediaUrl && (
+          <video
+            src={`http://localhost:3000${message.mediaUrl}`}
+            controls
+            className="mb-2 max-w-full rounded-lg"
+          />
+        )}
+        {message.mediaType === 'audio' && message.mediaUrl && (
+          <audio
+            src={`http://localhost:3000${message.mediaUrl}`}
+            controls
+            className="mb-2 max-w-full"
+          />
+        )}
+        {message.mediaType === 'document' && message.mediaUrl && (
+          <a
+            href={`http://localhost:3000${message.mediaUrl}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-2 flex items-center gap-2 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors"
+          >
+            <span className="text-sm font-medium underline">
+              {message.content || 'Document'}
+            </span>
+          </a>
+        )}
         <p className="text-sm text-foreground whitespace-pre-wrap break-words">
           {message.content}
         </p>

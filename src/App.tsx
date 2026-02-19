@@ -20,14 +20,7 @@ import Users from "@/pages/Users";
 const queryClient = new QueryClient();
 
 const App = () => {
-  useEffect(() => {
-    // Initialize Socket.IO connection
-    socketService.connect();
-
-    return () => {
-      socketService.disconnect();
-    };
-  }, []);
+  // Socket connection moved to ProtectedRoute/Layout to handle auth
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -41,6 +41,10 @@ export interface Client {
   status: ClientStatus;
   assignedAgentId?: string;
   assignedAgent?: Agent;
+  email?: string;
+  company?: string;
+  address?: string;
+  source?: string;
   tags: string[];
   notes: string;
   messages: Message[];

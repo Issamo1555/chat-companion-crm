@@ -32,14 +32,42 @@ export const api = {
         return response.json();
     },
 
-    sendMessage: async (clientId: string, content: string, direction: 'inbound' | 'outbound'): Promise<Message> => {
+    sendMessage: async (clientId: string, content: string | File, direction: 'inbound' | 'outbound'): Promise<Message> => {
+        if (content instanceof File) {
+            return api.sendMediaMessage(clientId, content, direction);
+        }
+
         const response = await fetch(`${API_URL}/messages`, {
             method: 'POST',
-            headers: getAuthHeaders(),
+            headers: {
+                ...getAuthHeaders() as Record<string, string>,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ clientId, content, direction })
         });
         if (!response.ok) {
             throw new Error('Failed to send message');
+        }
+        return response.json();
+    },
+
+    sendMediaMessage: async (clientId: string, file: File, direction: 'inbound' | 'outbound'): Promise<Message> => {
+        const formData = new FormData();
+        formData.append('clientId', clientId);
+        formData.append('file', file);
+        formData.append('direction', direction);
+
+        const headers = getAuthHeaders() as Record<string, string>;
+        // Remove Content-Type to let browser set it with boundary for FormData
+        delete headers['Content-Type'];
+
+        const response = await fetch(`${API_URL}/messages/media`, {
+            method: 'POST',
+            headers,
+            body: formData
+        });
+        if (!response.ok) {
+            throw new Error('Failed to send media message');
         }
         return response.json();
     },
@@ -62,6 +90,30 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error('Failed to fetch tags');
+        }
+        return response.json();
+    },
+
+    updateClient: async (clientId: string, data: Partial<Client>): Promise<Client> => {
+        const response = await fetch(`${API_URL}/clients/${clientId}`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            throw new Error('Failed to update client');
+        }
+        return response.json();
+    },
+
+    createClient: async (data: Partial<Client>): Promise<Client> => {
+        const response = await fetch(`${API_URL}/clients`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            throw new Error('Failed to create client');
         }
         return response.json();
     },
