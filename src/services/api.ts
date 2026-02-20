@@ -1,4 +1,4 @@
-import { Agent, Client, Message, ClientStatus } from '@/types/crm';
+import { Agent, Client, Message, ClientStatus, Template } from '@/types/crm';
 
 const API_URL = 'http://localhost:3000/api';
 
@@ -124,6 +124,16 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error('Failed to fetch dashboard stats');
+        }
+        return response.json();
+    },
+
+    getTemplates: async (): Promise<Template[]> => {
+        const response = await fetch(`${API_URL}/templates`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) {
+            throw new Error('Failed to fetch templates');
         }
         return response.json();
     }

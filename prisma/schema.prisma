@@ -73,7 +73,7 @@ model User {
 model Client {
   id              String         @id @default(uuid())
   name            String
-  phoneNumber     String
+  phoneNumber     String         @unique
   status          String         @default("new") // Application level enum: ClientStatus
   assignedAgentId String?
   notes           String         @default("")
@@ -179,4 +179,16 @@ model Session {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   @@map("sessions")
+}
+
+model Template {
+  id        String   @id @default(uuid())
+  name      String
+  content   String
+  category  String?  // e.g., 'greeting', 'sales', 'support'
+  createdBy String?  // User ID
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("templates")
 }

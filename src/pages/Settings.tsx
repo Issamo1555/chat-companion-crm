@@ -17,6 +17,7 @@ import {
   Download,
   Upload,
 } from 'lucide-react';
+import TemplateList from '@/components/settings/TemplateList';
 import WhatsAppSettings from '@/components/settings/WhatsAppSettings';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -25,7 +26,7 @@ const Settings = () => {
   const isAdmin = user?.role === 'admin';
 
   return (
-    <MainLayout>
+    <>
       <div className="space-y-6 max-w-4xl">
         {/* Header */}
         <div>
@@ -39,6 +40,7 @@ const Settings = () => {
           <TabsList className="mb-6">
             <TabsTrigger value="general">Général</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="templates">Modèles</TabsTrigger>
             {isAdmin && <TabsTrigger value="api">API WhatsApp</TabsTrigger>}
             {isAdmin && <TabsTrigger value="import-export">Import/Export</TabsTrigger>}
           </TabsList>
@@ -130,6 +132,10 @@ const Settings = () => {
             </Card>
           </TabsContent>
 
+          <TabsContent value="templates">
+            <TemplateList />
+          </TabsContent>
+
           {isAdmin && (
             <TabsContent value="api">
               <WhatsAppSettings />
@@ -192,7 +198,7 @@ const Settings = () => {
           )}
         </Tabs>
       </div>
-    </MainLayout>
+    </>
   );
 };
 

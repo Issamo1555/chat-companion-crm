@@ -314,13 +314,15 @@ export async function sendWhatsAppMessage(
         }
 
         // Format phone number (add @s.whatsapp.net)
-        const jid = phoneNumber.includes('@')
-            ? phoneNumber
-            : `${phoneNumber}@s.whatsapp.net`;
+        // Remove '+' and other non-digits
+        const sanitizedNumber = phoneNumber.replace(/\D/g, '');
+        const jid = sanitizedNumber.includes('@')
+            ? sanitizedNumber
+            : `${sanitizedNumber}@s.whatsapp.net`;
 
         await sock.sendMessage(jid, { text: content });
 
-        console.log(`✉️ Message sent to ${phoneNumber}: ${content}`);
+        console.log(`✉️ Message sent to ${sanitizedNumber}: ${content}`);
         return true;
     } catch (error) {
         console.error('❌ Error sending message:', error);
@@ -342,9 +344,10 @@ export async function sendWhatsAppMedia(
             throw new Error('WhatsApp is not connected');
         }
 
-        const jid = phoneNumber.includes('@')
-            ? phoneNumber
-            : `${phoneNumber}@s.whatsapp.net`;
+        const sanitizedNumber = phoneNumber.replace(/\D/g, '');
+        const jid = sanitizedNumber.includes('@')
+            ? sanitizedNumber
+            : `${sanitizedNumber}@s.whatsapp.net`;
 
         const mediaBuffer = fs.readFileSync(mediaPath);
 
@@ -367,7 +370,7 @@ export async function sendWhatsAppMedia(
 
         await sock.sendMessage(jid, messageContent);
 
-        console.log(`📎 Media sent to ${phoneNumber}`);
+        console.log(`📎 Media sent to ${sanitizedNumber}`);
         return true;
     } catch (error) {
         console.error('❌ Error sending media:', error);

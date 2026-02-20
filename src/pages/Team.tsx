@@ -203,7 +203,7 @@ const Team = () => {
   }
 
   return (
-    <MainLayout>
+    <>
       <div className="space-y-6">
         {/* Header with Stats */}
         <div>
@@ -467,7 +467,7 @@ const Team = () => {
         </Dialog>
 
       </div>
-    </MainLayout>
+    </>
   );
 };
 

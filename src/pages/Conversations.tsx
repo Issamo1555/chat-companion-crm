@@ -66,7 +66,7 @@ const Conversations = () => {
   };
 
   return (
-    <MainLayout>
+    <>
       <div className="flex h-[calc(100vh-5rem)] gap-6">
         {/* Conversations List */}
         <div className="w-80 flex flex-col rounded-2xl border border-border bg-card overflow-hidden">
@@ -163,7 +163,7 @@ const Conversations = () => {
           )}
         </div>
       </div>
-    </MainLayout>
+    </>
   );
 };
 

@@ -571,19 +571,63 @@ app.get('/api/clients', requireAuth, async (req, res) => {
 
 app.post('/api/clients', requireAuth, async (req, res) => {
   try {
-    let client = await prisma.client.create({
-      data: {
-        ...req.body,
-        updatedAt: new Date(),
-      },
+    const { name, phoneNumber, email, company, address, source, status, notes } = req.body;
+
+    // Check if client with this phone number already exists
+    const existingClient = await prisma.client.findFirst({
+      where: { phoneNumber },
     });
 
-    // Attempt Round Robin assignment
-    client = await assignmentService.assignClient(client);
+    let client;
 
-    // If assigned, we might want to notify via socket (optional, but good)
-    if (client.assignedAgentId) {
-      socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
+    if (existingClient) {
+      // If client exists, update it with provided info if necessary (or just return it)
+      // For now, let's update basic info but keep status if not provided
+      client = await prisma.client.update({
+        where: { id: existingClient.id },
+        data: {
+          name: name || existingClient.name,
+          email: email || existingClient.email,
+          company: company || existingClient.company,
+          address: address || existingClient.address,
+          source: source || existingClient.source,
+          // Don't override status unless explicitly requested
+          // status: status || existingClient.status, 
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`Updated existing client: ${client.name} (${client.phoneNumber})`);
+    } else {
+      // Create new client
+      client = await prisma.client.create({
+        data: {
+          name,
+          phoneNumber,
+          email,
+          company,
+          address,
+          source,
+          status: status || 'new',
+          notes,
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`Created new client: ${client.name} (${client.phoneNumber})`);
+    }
+
+    try {
+      // Attempt Round Robin assignment (only if not already assigned)
+      if (!client.assignedAgentId) {
+        client = await assignmentService.assignClient(client);
+
+        // If assigned, we might want to notify via socket (optional, but good)
+        if (client.assignedAgentId) {
+          socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
+        }
+      }
+    } catch (assignmentError) {
+      console.error('Assignment error:', assignmentError);
+      // We don't fail the request if assignment fails, we just log it
     }
 
     // Also emit to admins or general update
@@ -592,7 +636,86 @@ app.post('/api/clients', requireAuth, async (req, res) => {
     res.json(client);
   } catch (error) {
     console.error('Create client error:', error);
-    res.status(500).json({ error: 'Failed to create client' });
+    // @ts-ignore
+    res.status(500).json({ error: 'Failed to create client', details: error.message });
+  }
+});
+
+// ============================================
+// Templates API (Protected)
+// ============================================
+
+// Get all templates
+app.get('/api/templates', requireAuth, async (req, res) => {
+  try {
+    const templates = await prisma.template.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(templates);
+  } catch (error) {
+    console.error('Fetch templates error:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+// Create template
+app.post('/api/templates', requireAuth, async (req, res) => {
+  try {
+    const { name, content, category } = req.body;
+
+    if (!name || !content) {
+      return res.status(400).json({ error: 'Name and content are required' });
+    }
+
+    const template = await prisma.template.create({
+      data: {
+        name,
+        content,
+        category,
+        createdBy: req.user!.userId
+      }
+    });
+
+    res.status(201).json(template);
+  } catch (error) {
+    console.error('Create template error:', error);
+    res.status(500).json({ error: 'Failed to create template' });
+  }
+});
+
+// Update template
+app.put('/api/templates/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, content, category } = req.body;
+
+    const template = await prisma.template.update({
+      where: { id },
+      data: {
+        name,
+        content,
+        category
+      }
+    });
+
+    res.json(template);
+  } catch (error) {
+    console.error('Update template error:', error);
+    res.status(500).json({ error: 'Failed to update template' });
+  }
+});
+
+// Delete template
+app.delete('/api/templates/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.template.delete({
+      where: { id }
+    });
+    res.json({ message: 'Template deleted' });
+  } catch (error) {
+    console.error('Delete template error:', error);
+    res.status(500).json({ error: 'Failed to delete template' });
   }
 });
 

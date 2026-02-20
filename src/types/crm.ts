@@ -94,3 +94,11 @@ export const STATUS_COLORS: Record<ClientStatus, string> = {
   relaunched: 'bg-status-relaunched',
   closed: 'bg-status-closed',
 };
+
+export interface Template {
+  id: string;
+  name: string;
+  content: string;
+  category?: string;
+  createdAt: string;
+}
