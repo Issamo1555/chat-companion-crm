@@ -16,6 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import { assignmentService } from './services/assignment';
 import { socketManager } from './services/socketManager';
+import { normalizePhoneNumber } from './utils/phone';
 
 const prisma = new PrismaClient();
 
@@ -142,8 +143,29 @@ async function handleIncomingMessage(msg: WAMessage) {
         const messageType = getContentType(msg.message);
         if (!messageType) return;
 
-        // Extract phone number (remove @s.whatsapp.net)
-        const phoneNumber = msg.key.remoteJid?.replace('@s.whatsapp.net', '') || '';
+        const remoteJid = msg.key.remoteJid || '';
+
+        // Filter out non-personal JIDs that we don't want:
+        // @newsletter - Channels/Newsletters (Still filtered as requested)
+        if (remoteJid.includes('@newsletter')) {
+            console.log(`ℹ️ Ignoring message from newsletter: ${remoteJid}`);
+            return;
+        }
+
+        // Identify if it's a group or broadcast
+        const isGroup = remoteJid.includes('@g.us');
+        const isBroadcast = remoteJid.includes('@broadcast');
+
+        // Extract phone number or JID
+        // For regular users: normalize (digits only)
+        // For groups/broadcasts: keep as is (JID) to serve as unique identifier
+        let phoneNumber: string;
+        if (isGroup || isBroadcast) {
+            phoneNumber = remoteJid;
+        } else {
+            const rawPhoneNumber = remoteJid.replace('@s.whatsapp.net', '') || '';
+            phoneNumber = normalizePhoneNumber(rawPhoneNumber);
+        }
 
         // Extract message content
         let content = '';
@@ -215,7 +237,23 @@ async function handleIncomingMessage(msg: WAMessage) {
 
         if (!client) {
             // Extract contact name from WhatsApp
-            const contactName = msg.pushName || phoneNumber;
+            let contactName = msg.pushName || phoneNumber;
+
+            // If it's a group, try to fetch its real subject/name
+            if (isGroup && sock) {
+                try {
+                    const metadata = await sock.groupMetadata(remoteJid);
+                    if (metadata && metadata.subject) {
+                        contactName = metadata.subject;
+                        console.log(`🏠 Fetched group name: ${contactName}`);
+                    }
+                } catch (err) {
+                    console.error(`⚠️ Failed to fetch group metadata for ${remoteJid}:`, err);
+                    contactName = 'Groupe WhatsApp';
+                }
+            } else if (isBroadcast) {
+                contactName = 'Liste de diffusion';
+            }
 
             client = await prisma.client.create({
                 data: {
@@ -238,6 +276,40 @@ async function handleIncomingMessage(msg: WAMessage) {
 
             console.log(`✨ New client created: ${contactName} (${phoneNumber})`);
         } else {
+            // Client exists - Check if name needs synchronization
+            const contactName = msg.pushName;
+
+            // If the current name is just the phone number or generic, update it
+            const isGenericName = client.name === client.phoneNumber ||
+                client.name.includes('Client ') ||
+                client.name === 'Inconnu' ||
+                (isGroup && client.name === 'Groupe WhatsApp');
+
+            if (isGenericName) {
+                let newName = contactName;
+
+                // If it's a group, prioritize fetching fresh metadata
+                if (isGroup && sock) {
+                    try {
+                        const metadata = await sock.groupMetadata(remoteJid);
+                        if (metadata && metadata.subject) {
+                            newName = metadata.subject;
+                        }
+                    } catch (err) {
+                        console.error(`⚠️ Failed to sync group metadata for ${remoteJid}:`, err);
+                    }
+                }
+
+                if (newName && newName !== client.name) {
+                    console.log(`🔄 Syncing name for ${client.phoneNumber}: ${client.name} -> ${newName}`);
+                    await prisma.client.update({
+                        where: { id: client.id },
+                        data: { name: newName }
+                    });
+                    client.name = newName; // Update local object
+                }
+            }
+
             // Update last message timestamp
             await prisma.client.update({
                 where: { id: client.id },
@@ -387,6 +459,16 @@ export function getConnectionStatus() {
         qrCode,
         phoneNumber: connectedPhoneNumber,
     };
+}
+
+/**
+ * Get group metadata
+ */
+export async function getGroupMetadata(jid: string) {
+    if (!sock || !isConnected) {
+        throw new Error('WhatsApp is not connected');
+    }
+    return await sock.groupMetadata(jid);
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   getConnectionStatus,
   logoutWhatsApp,
   whatsappEvents,
+  getGroupMetadata,
 } from './whatsapp';
 import {
   hashPassword,
@@ -24,6 +25,7 @@ import {
 import { requireAuth, requireRole } from './middleware/auth';
 import { socketManager } from './services/socketManager';
 import { assignmentService } from './services/assignment';
+import { normalizePhoneNumber } from './utils/phone';
 
 const app = express();
 const httpServer = createServer(app);
@@ -577,9 +579,11 @@ app.post('/api/clients', requireAuth, async (req, res) => {
   try {
     const { name, phoneNumber, email, company, address, source, status, notes } = req.body;
 
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
     // Check if client with this phone number already exists
     const existingClient = await prisma.client.findFirst({
-      where: { phoneNumber },
+      where: { phoneNumber: normalizedPhone },
     });
 
     let client;
@@ -606,13 +610,13 @@ app.post('/api/clients', requireAuth, async (req, res) => {
       client = await prisma.client.create({
         data: {
           name,
-          phoneNumber,
+          phoneNumber: normalizedPhone,
           email,
           company,
           address,
           source,
           status: status || 'new',
-          notes,
+          notes: notes || '',
           updatedAt: new Date(),
         },
       });
@@ -726,10 +730,16 @@ app.delete('/api/templates/:id', requireAuth, async (req, res) => {
 app.patch('/api/clients/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const data = { ...req.body };
+
+    if (data.phoneNumber) {
+      data.phoneNumber = normalizePhoneNumber(data.phoneNumber);
+    }
+
     const client = await prisma.client.update({
       where: { id },
       data: {
-        ...req.body,
+        ...data,
         updatedAt: new Date(),
       },
     });
@@ -1437,6 +1447,26 @@ whatsappEvents.on('message:status', (data) => {
 whatsappEvents.on('logout', () => {
   console.log('👋 WhatsApp logged out - broadcasting to clients');
   io.emit('whatsapp:logout');
+});
+
+// Debug endpoint to sync group name
+app.get('/api/debug/sync-group/:jid', async (req, res) => {
+  try {
+    const { jid } = req.params;
+    const metadata = await getGroupMetadata(jid);
+
+    if (metadata && metadata.subject) {
+      await prisma.client.update({
+        where: { phoneNumber: jid },
+        data: { name: metadata.subject }
+      });
+      res.json({ success: true, name: metadata.subject });
+    } else {
+      res.status(404).json({ error: 'Metadata not found' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Initialize WhatsApp on server start

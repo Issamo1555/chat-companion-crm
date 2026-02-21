@@ -130,10 +130,10 @@ const Settings = () => {
               // Create client (assuming api.createClient expects this payload)
               await api.createClient({
                 name,
-                phoneNumber: phone.toString(),
+                phoneNumber: phone.toString().replace(/\D/g, ''),
                 email: email || '',
                 company: company || '',
-                status: 'nouveau'
+                status: 'new'
               });
               successCount++;
             } catch (err) {
