@@ -15,6 +15,7 @@ import {
   whatsappEvents,
   getGroupMetadata,
 } from './whatsapp';
+import { metaService } from './services/meta';
 import {
   hashPassword,
   verifyPassword,
@@ -362,7 +363,7 @@ app.put('/api/users/:id', requireAuth, requireRole('admin'), async (req, res) =>
 
     if (email) {
       const existingUser = await prisma.user.findFirst({
-        where: { email, NOT: { id } }
+        where: { email, NOT: { id: String(id) } }
       });
       if (existingUser) {
         return res.status(400).json({ error: 'Email already in use' });
@@ -370,7 +371,7 @@ app.put('/api/users/:id', requireAuth, requireRole('admin'), async (req, res) =>
     }
 
     const user = await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: {
         ...(name && { name }),
         ...(email && { email }),
@@ -409,14 +410,14 @@ app.put('/api/users/:id/role', requireAuth, requireRole('admin'), async (req, re
     }
 
     // Check if user exists
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Update role
     const updatedUser = await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: { role },
       select: {
         id: true,
@@ -451,7 +452,7 @@ app.put('/api/users/:id/status', requireAuth, requireRole('admin'), async (req, 
     }
 
     // Check if user exists
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -462,7 +463,7 @@ app.put('/api/users/:id/status', requireAuth, requireRole('admin'), async (req, 
         where: {
           role: 'admin',
           isActive: true,
-          id: { not: id },
+          id: { not: String(id) },
         },
       });
 
@@ -475,7 +476,7 @@ app.put('/api/users/:id/status', requireAuth, requireRole('admin'), async (req, 
 
     // Update status
     const updatedUser = await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: { isActive },
       select: {
         id: true,
@@ -504,7 +505,7 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
     }
 
     // Check if user exists
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -515,7 +516,7 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
         where: {
           role: 'admin',
           isActive: true,
-          id: { not: id },
+          id: { not: String(id) },
         },
       });
 
@@ -528,7 +529,7 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
 
     // Soft delete: Set deletedAt timestamp instead of deleting
     await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: {
         deletedAt: new Date(),
         isActive: false, // Also deactivate the account
@@ -581,9 +582,13 @@ app.post('/api/clients', requireAuth, async (req, res) => {
 
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
-    // Check if client with this phone number already exists
-    const existingClient = await prisma.client.findFirst({
-      where: { phoneNumber: normalizedPhone },
+    const existingClient = await prisma.client.findUnique({
+      where: {
+        platform_platformId: {
+          platform: 'whatsapp',
+          platformId: normalizedPhone
+        }
+      },
     });
 
     let client;
@@ -611,6 +616,8 @@ app.post('/api/clients', requireAuth, async (req, res) => {
         data: {
           name,
           phoneNumber: normalizedPhone,
+          platform: 'whatsapp',
+          platformId: normalizedPhone,
           email,
           company,
           address,
@@ -785,11 +792,17 @@ app.post('/api/messages', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    // If outbound, send via WhatsApp
+    // If outbound, send via respective platform
     if (direction === 'outbound') {
-      const sent = await sendWhatsAppMessage(client.phoneNumber, content);
+      let sent = false;
+      if (client.platform === 'whatsapp') {
+        sent = await sendWhatsAppMessage(client.platformId, content);
+      } else if (client.platform === 'instagram' || client.platform === 'messenger') {
+        sent = await metaService.sendMessage(client.platform, client.platformId, content);
+      }
+
       if (!sent) {
-        return res.status(500).json({ error: 'Failed to send WhatsApp message' });
+        return res.status(500).json({ error: `Failed to send ${client.platform} message` });
       }
     }
 
@@ -799,6 +812,7 @@ app.post('/api/messages', requireAuth, async (req, res) => {
         content,
         direction,
         status,
+        platform: client.platform,
         timestamp: new Date(),
       },
     });
@@ -892,17 +906,23 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    // If outbound, send via WhatsApp
+    // If outbound, send via respective platform
     if (direction === 'outbound') {
-      const sent = await sendWhatsAppMedia(
-        client.phoneNumber,
-        file.path,
-        '', // Caption could be added here if supported in frontend
-        mediaType
-      );
+      let sent = false;
+      if (client.platform === 'whatsapp') {
+        sent = await sendWhatsAppMedia(
+          client.platformId,
+          file.path,
+          '',
+          mediaType
+        );
+      } else {
+        // Meta media sending can be implemented here
+        sent = await metaService.sendMessage(client.platform, client.platformId, `[Media: ${mediaUrl}]`);
+      }
 
       if (!sent) {
-        return res.status(500).json({ error: 'Failed to send WhatsApp media' });
+        return res.status(500).json({ error: `Failed to send ${client.platform} media` });
       }
     }
 
@@ -914,6 +934,7 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
         mediaType,
         direction,
         status: 'sent',
+        platform: client.platform,
         timestamp: new Date(),
       },
     });
@@ -1439,7 +1460,7 @@ whatsappEvents.on('message:new', async (data) => {
   }
 });
 
-whatsappEvents.on('message:status', (data) => {
+whatsappEvents.on('message:status', (data: any) => {
   console.log('📬 Message status update - broadcasting to clients');
   io.emit('message:status', data);
 });
@@ -1457,7 +1478,12 @@ app.get('/api/debug/sync-group/:jid', async (req, res) => {
 
     if (metadata && metadata.subject) {
       await prisma.client.update({
-        where: { phoneNumber: jid },
+        where: {
+          platform_platformId: {
+            platform: 'whatsapp',
+            platformId: jid
+          }
+        },
         data: { name: metadata.subject }
       });
       res.json({ success: true, name: metadata.subject });
@@ -1472,6 +1498,32 @@ app.get('/api/debug/sync-group/:jid', async (req, res) => {
 // Initialize WhatsApp on server start
 initializeWhatsApp().catch((error) => {
   console.error('❌ Failed to initialize WhatsApp:', error);
+});
+
+// Meta Webhooks
+app.get('/api/webhooks/meta', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+      console.log('✅ Meta Webhook verified');
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  }
+});
+
+app.post('/api/webhooks/meta', async (req, res) => {
+  try {
+    await metaService.handleWebhook(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Meta webhook error:', error);
+    res.sendStatus(500);
+  }
 });
 
 httpServer.listen(PORT, () => {

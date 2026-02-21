@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Check, CheckCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import PlatformIcon from '../clients/PlatformIcon';
 
 interface ChatBubbleProps {
   message: Message;
@@ -68,6 +69,9 @@ const ChatBubble = ({ message }: ChatBubbleProps) => {
             isOutbound ? 'justify-end' : 'justify-start'
           )}
         >
+          {!isOutbound && message.platform && (
+            <PlatformIcon platform={message.platform} size={10} className="opacity-50" />
+          )}
           <span className="text-xs text-muted-foreground">
             {format(message.timestamp, 'HH:mm', { locale: fr })}
           </span>

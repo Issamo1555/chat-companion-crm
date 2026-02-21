@@ -1,4 +1,5 @@
 export type ClientStatus = 'new' | 'in_progress' | 'treated' | 'relaunched' | 'closed';
+export type Platform = 'whatsapp' | 'instagram' | 'messenger';
 
 export type UserRole = 'admin' | 'agent';
 
@@ -24,6 +25,7 @@ export interface Message {
   direction: 'inbound' | 'outbound';
   timestamp: Date;
   status: 'sent' | 'delivered' | 'read';
+  platform?: Platform;
 }
 
 export interface StatusChange {
@@ -39,7 +41,9 @@ export interface StatusChange {
 export interface Client {
   id: string;
   name: string;
-  phoneNumber: string;
+  phoneNumber?: string;
+  platform: Platform;
+  platformId: string;
   status: ClientStatus;
   assignedAgentId?: string;
   assignedAgent?: Agent;

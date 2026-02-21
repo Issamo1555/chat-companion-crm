@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import TemplateList from '@/components/settings/TemplateList';
 import WhatsAppSettings from '@/components/settings/WhatsAppSettings';
+import MetaSettings from '@/components/settings/MetaSettings';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api';
 import Papa from 'papaparse';
@@ -175,7 +176,8 @@ const Settings = () => {
             <TabsTrigger value="general">Général</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="templates">Modèles</TabsTrigger>
-            {isAdmin && <TabsTrigger value="api">API WhatsApp</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="api">WhatsApp</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="meta">Meta (IG/FB)</TabsTrigger>}
             {isAdmin && <TabsTrigger value="import-export">Import/Export</TabsTrigger>}
           </TabsList>
 
@@ -273,6 +275,12 @@ const Settings = () => {
           {isAdmin && (
             <TabsContent value="api">
               <WhatsAppSettings />
+            </TabsContent>
+          )}
+
+          {isAdmin && (
+            <TabsContent value="meta">
+              <MetaSettings />
             </TabsContent>
           )}
 

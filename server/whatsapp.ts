@@ -232,8 +232,13 @@ async function handleIncomingMessage(msg: WAMessage) {
         if (!content && !mediaUrl) return;
 
         // Find or create client
-        let client = await prisma.client.findFirst({
-            where: { phoneNumber },
+        let client = await prisma.client.findUnique({
+            where: {
+                platform_platformId: {
+                    platform: 'whatsapp',
+                    platformId: phoneNumber
+                }
+            },
         });
 
         if (!client) {
@@ -260,6 +265,8 @@ async function handleIncomingMessage(msg: WAMessage) {
                 data: {
                     name: contactName,
                     phoneNumber,
+                    platform: 'whatsapp',
+                    platformId: phoneNumber,
                     status: 'new',
                     lastMessageAt: new Date(),
                 },
@@ -330,6 +337,7 @@ async function handleIncomingMessage(msg: WAMessage) {
                 mediaType,
                 direction: 'inbound',
                 status: 'delivered',
+                platform: 'whatsapp',
                 timestamp: new Date((msg.messageTimestamp as number) * 1000),
             },
         });

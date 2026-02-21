@@ -24,6 +24,7 @@ import StatusBadge from './StatusBadge';
 import InlineStatusSelect from './InlineStatusSelect';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import PlatformIcon from './PlatformIcon';
 
 import { NewClientDialog } from './NewClientDialog';
 
@@ -152,8 +153,11 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
                           {client.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-semibold">{client.name}</div>
-                          <div className="text-xs text-muted-foreground">{client.phoneNumber}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-semibold">{client.name}</div>
+                            <PlatformIcon platform={client.platform} size={14} />
+                          </div>
+                          <div className="text-xs text-muted-foreground">{client.phoneNumber || client.platformId}</div>
                         </div>
                       </div>
                     </TableCell>

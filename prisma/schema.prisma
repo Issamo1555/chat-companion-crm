@@ -88,7 +88,9 @@ model AgentBreak {
 model Client {
   id              String         @id @default(uuid())
   name            String
-  phoneNumber     String         @unique
+  phoneNumber     String?        // Made optional, platformId is the new unique identifier
+  platform        String         @default("whatsapp") // "whatsapp", "instagram", "messenger"
+  platformId      String         // Unique ID from the platform (JID for WA, PSID for FB, etc.)
   status          String         @default("new") // Application level enum: ClientStatus
   assignedAgentId String?
   notes           String         @default("")
@@ -107,6 +109,7 @@ model Client {
   statusHistory   StatusHistory[]
   reminders       Reminder[]
 
+  @@unique([platform, platformId])
   @@map("clients")
 }
 
@@ -139,6 +142,7 @@ model Message {
   mediaType   String?   // Application level enum: MediaType
   direction   String    // Application level enum: MessageDirection
   status      String    @default("sent") // Application level enum: MessageStatus
+  platform    String    @default("whatsapp")
   timestamp   DateTime  @default(now())
 
   // Relations

@@ -11,10 +11,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import { socketService } from '@/services/socket';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Users, User as UserIcon } from 'lucide-react';
+import { Users, User as UserIcon, Instagram, Facebook, MessageCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import PlatformIcon from '@/components/clients/PlatformIcon';
+import { Platform } from '@/types/crm';
 
 const Conversations = () => {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const platformFilter = searchParams.get('platform') as Platform | null;
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -22,13 +27,6 @@ const Conversations = () => {
     queryKey: ['clients'],
     queryFn: api.getClients,
   });
-
-  // Select first client valid when data loads if none selected
-  useEffect(() => {
-    if (clients.length > 0 && !selectedClientId) {
-      setSelectedClientId(clients[0].id);
-    }
-  }, [clients, selectedClientId]);
 
   // Listen for real-time messages
   useEffect(() => {
@@ -55,12 +53,16 @@ const Conversations = () => {
     },
   });
 
-  const privateClients = clients.filter(
-    (client) => !client.phoneNumber.includes('@g.us') && !client.phoneNumber.includes('@broadcast')
+  const filteredByPlatform = clients.filter(
+    (client) => !platformFilter || client.platform === platformFilter
   );
 
-  const groupClients = clients.filter(
-    (client) => client.phoneNumber.includes('@g.us') || client.phoneNumber.includes('@broadcast')
+  const privateClients = filteredByPlatform.filter(
+    (client) => !client.phoneNumber?.includes('@g.us') && !client.phoneNumber?.includes('@broadcast')
+  );
+
+  const groupClients = filteredByPlatform.filter(
+    (client) => client.phoneNumber?.includes('@g.us') || client.phoneNumber?.includes('@broadcast')
   );
 
   const filterBySearch = (list: any[]) =>
@@ -72,6 +74,21 @@ const Conversations = () => {
 
   const filteredPrivate = filterBySearch(privateClients);
   const filteredGroups = filterBySearch(groupClients);
+
+  // Synchronize selection with current platform filter
+  useEffect(() => {
+    if (isLoading) return;
+
+    const isSelectionValid = filteredByPlatform.some(c => c.id === selectedClientId);
+
+    if (!isSelectionValid) {
+      if (filteredByPlatform.length > 0) {
+        setSelectedClientId(filteredByPlatform[0].id);
+      } else {
+        setSelectedClientId(null);
+      }
+    }
+  }, [platformFilter, filteredByPlatform, isLoading, selectedClientId]);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
 
@@ -114,8 +131,13 @@ const Conversations = () => {
           )}
         >
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold shrink-0">
-              {client.name.charAt(0).toUpperCase()}
+            <div className="relative shrink-0">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold">
+                {client.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-0.5 shadow-sm border border-border">
+                <PlatformIcon platform={client.platform} size={12} />
+              </div>
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
@@ -137,7 +159,9 @@ const Conversations = () => {
                   {lastMessage.content}
                 </p>
               )}
-              <StatusBadge status={client.status} size="sm" />
+              <div className="flex items-center justify-between mt-1">
+                <StatusBadge status={client.status} size="sm" />
+              </div>
             </div>
           </div>
         </button>
@@ -151,9 +175,15 @@ const Conversations = () => {
         {/* Conversations List */}
         <div className="w-80 flex flex-col rounded-2xl border border-border bg-card overflow-hidden">
           <div className="p-4 border-b border-border">
-            <h2 className="text-lg font-semibold text-foreground mb-3">
-              Conversations
-            </h2>
+            <div className="flex items-center gap-2 mb-3">
+              {platformFilter === 'whatsapp' && <MessageCircle className="h-5 w-5 text-green-500" />}
+              {platformFilter === 'instagram' && <Instagram className="h-5 w-5 text-pink-500" />}
+              {platformFilter === 'messenger' && <Facebook className="h-5 w-5 text-blue-500" />}
+              {!platformFilter && <MessageSquare className="h-5 w-5 text-primary" />}
+              <h2 className="text-lg font-semibold text-foreground">
+                {platformFilter ? (platformFilter.charAt(0).toUpperCase() + platformFilter.slice(1)) : 'Conversations'}
+              </h2>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/services/api';
-import { Loader2, Users, MessageSquare, Clock, UserPlus, Activity, ArrowUpRight, ArrowDownRight, TrendingUp } from 'lucide-react';
+import { Loader2, Users, MessageSquare, Clock, UserPlus, Activity, ArrowUpRight, ArrowDownRight, TrendingUp, CheckCircle2, XCircle } from 'lucide-react';
+import PlatformIcon from '@/components/clients/PlatformIcon';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
@@ -154,6 +156,29 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground font-medium mt-1">Moyenne de réponse</p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* New: Channel Connectivity Status */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {['whatsapp', 'instagram', 'messenger'].map((p) => (
+          <Card key={p} className="hover:shadow-sm transition-shadow">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <PlatformIcon platform={p as any} size={24} />
+                <div>
+                  <p className="text-sm font-semibold capitalize">{p}</p>
+                  <div className="flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                    <span className="text-[10px] text-muted-foreground">Actif</span>
+                  </div>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" className="text-xs h-8" asChild>
+                <a href="/settings">Gérer</a>
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">

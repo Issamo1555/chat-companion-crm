@@ -4,6 +4,7 @@ import ChatBubble from './ChatBubble';
 import ChatInput from './ChatInput';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import PlatformIcon from '../clients/PlatformIcon';
 
 interface ChatWindowProps {
   client: Client;
@@ -61,8 +62,11 @@ const ChatWindow = ({ client, onSendMessage }: ChatWindowProps) => {
           {client.name.charAt(0).toUpperCase()}
         </div>
         <div>
-          <h3 className="font-semibold text-foreground">{client.name}</h3>
-          <p className="text-sm text-muted-foreground">{client.phoneNumber}</p>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-foreground">{client.name}</h3>
+            <PlatformIcon platform={client.platform} size={14} />
+          </div>
+          <p className="text-sm text-muted-foreground">{client.phoneNumber || client.platformId}</p>
         </div>
       </div>
 
