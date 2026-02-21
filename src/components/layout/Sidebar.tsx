@@ -13,6 +13,8 @@ import {
   Instagram,
   Facebook,
   MessageCircle,
+  LayoutGrid,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -38,6 +40,8 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
   const navigation = [
     { name: 'Tableau de bord', href: '/', icon: LayoutDashboard, adminOnly: true },
     { name: 'Clients', href: '/clients', icon: Users, adminOnly: false },
+    { name: 'Pipeline', href: '/pipeline', icon: LayoutGrid, adminOnly: false },
+    { name: 'Automation', href: '/automation', icon: Zap, adminOnly: false },
     { name: 'Rappels', href: '/rappels', icon: Calendar, adminOnly: false },
     { name: 'Équipe', href: '/team', icon: UserCircle, adminOnly: true },
     { name: 'Logs', href: '/logs', icon: ClipboardList, adminOnly: true },

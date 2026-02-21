@@ -238,5 +238,108 @@ export const api = {
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete agent break');
+    },
+
+    // --- Pipeline API ---
+    getPipelineStages: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/pipeline/stages`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch pipeline stages');
+        return response.json();
+    },
+
+    createOpportunity: async (data: { clientId: string, stageId: string, value?: number }): Promise<any> => {
+        const response = await fetch(`${API_URL}/pipeline/opportunities`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create opportunity');
+        return response.json();
+    },
+
+    moveOpportunity: async (opportunityId: string, stageId: string): Promise<any> => {
+        const response = await fetch(`${API_URL}/pipeline/opportunities/${opportunityId}/move`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ stageId })
+        });
+        if (!response.ok) throw new Error('Failed to move opportunity');
+        return response.json();
+    },
+
+    updateOpportunityStatus: async (opportunityId: string, status: 'won' | 'lost'): Promise<any> => {
+        const response = await fetch(`${API_URL}/pipeline/opportunities/${opportunityId}/status`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ status })
+        });
+        if (!response.ok) throw new Error('Failed to update opportunity status');
+        return response.json();
+    },
+
+    // --- Smart Lists API ---
+    getSmartLists: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/smart-lists`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch smart lists');
+        return response.json();
+    },
+
+    createSmartList: async (data: { name: string, filters: any, userId?: string }): Promise<any> => {
+        const response = await fetch(`${API_URL}/smart-lists`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create smart list');
+        return response.json();
+    },
+
+    deleteSmartList: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/smart-lists/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to delete smart list');
+    },
+
+    // --- Workflows API ---
+    getWorkflows: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/workflows`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch workflows');
+        return response.json();
+    },
+
+    createWorkflow: async (data: { name: string, description?: string, triggers: any[], actions: any[] }): Promise<any> => {
+        const response = await fetch(`${API_URL}/workflows`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create workflow');
+        return response.json();
+    },
+
+    toggleWorkflow: async (id: string, isActive: boolean): Promise<any> => {
+        const response = await fetch(`${API_URL}/workflows/${id}/toggle`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ isActive })
+        });
+        if (!response.ok) throw new Error('Failed to toggle workflow');
+        return response.json();
+    },
+
+    deleteWorkflow: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/workflows/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to delete workflow');
     }
 };

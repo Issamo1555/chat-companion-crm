@@ -68,6 +68,7 @@ model User {
   sessions        Session[]
   reminders       Reminder[]
   agentBreaks     AgentBreak[]
+  smartLists      SmartList[]
   
   @@map("users")
 }
@@ -108,6 +109,7 @@ model Client {
   tags            ClientTag[]
   statusHistory   StatusHistory[]
   reminders       Reminder[]
+  opportunities   Opportunity[]
 
   @@unique([platform, platformId])
   @@map("clients")
@@ -143,6 +145,7 @@ model Message {
   direction   String    // Application level enum: MessageDirection
   status      String    @default("sent") // Application level enum: MessageStatus
   platform    String    @default("whatsapp")
+  channel     String?   // crm, whatsapp, meta
   timestamp   DateTime  @default(now())
 
   // Relations
@@ -229,4 +232,83 @@ model Reminder {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("reminders")
+}
+
+model PipelineStage {
+  id            String        @id @default(uuid())
+  name          String
+  order         Int           @default(0)
+  color         String?       @default("#3b82f6")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  opportunities Opportunity[]
+
+  @@map("pipeline_stages")
+}
+
+model Opportunity {
+  id          String        @id @default(uuid())
+  clientId    String
+  stageId     String
+  value       Float         @default(0)
+  status      String        @default("active") // "active", "won", "lost"
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  stage       PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@map("opportunities")
+}
+
+// --- Workflow Automation ---
+
+model Workflow {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean          @default(true)
+  triggers    WorkflowTrigger[]
+  actions     WorkflowAction[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("workflows")
+}
+
+model WorkflowTrigger {
+  id          String   @id @default(uuid())
+  workflowId  String
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  type        String   // on_client_created, on_status_change, on_message_received, on_opportunity_stage_change
+  config      String   // JSON configuration (e.g., { "status": "interested" } or { "keyword": "prix" })
+  createdAt   DateTime @default(now())
+
+  @@map("workflow_triggers")
+}
+
+model WorkflowAction {
+  id          String   @id @default(uuid())
+  workflowId  String
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  type        String   // send_message, add_tag, assign_agent, update_status, create_opportunity
+  config      String   // JSON configuration (e.g., { "message": "Bonjour", "tagId": 1 })
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@map("workflow_actions")
+}
+
+model SmartList {
+  id        String   @id @default(uuid())
+  name      String
+  filters   String   // JSON string storing filter criteria
+  userId    String?  // Optional: link to a specific user or keep global
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("smart_lists")
 }

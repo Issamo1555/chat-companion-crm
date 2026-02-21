@@ -17,6 +17,8 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ActivityLogs from "@/pages/ActivityLogs";
 import Users from "@/pages/Users";
+import Pipeline from "@/pages/Pipeline";
+import Workflows from "@/pages/Workflows";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +43,8 @@ const App = () => {
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/conversations" element={<Conversations />} />
+                      <Route path="/pipeline" element={<Pipeline />} />
+                      <Route path="/automation" element={<Workflows />} />
                       <Route path="/clients" element={<Clients />} />
                       <Route path="/clients/:id" element={<ClientDetail />} />
                       <Route path="/rappels" element={<Reminders />} />

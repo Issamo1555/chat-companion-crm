@@ -27,6 +27,7 @@ import { requireAuth, requireRole } from './middleware/auth';
 import { socketManager } from './services/socketManager';
 import { assignmentService } from './services/assignment';
 import { normalizePhoneNumber } from './utils/phone';
+import { workflowEngine } from './services/workflowEngine';
 
 const app = express();
 const httpServer = createServer(app);
@@ -628,6 +629,12 @@ app.post('/api/clients', requireAuth, async (req, res) => {
         },
       });
       console.log(`Created new client: ${client.name} (${client.phoneNumber})`);
+
+      // Trigger workflow: on_client_created
+      workflowEngine.processEvent({
+        type: 'on_client_created',
+        clientId: client.id
+      });
     }
 
     try {
@@ -707,9 +714,9 @@ app.put('/api/templates/:id', requireAuth, async (req, res) => {
     const template = await prisma.template.update({
       where: { id },
       data: {
-        name,
-        content,
-        category
+        name: String(name),
+        content: String(content),
+        category: category ? String(category) : undefined
       }
     });
 
@@ -852,7 +859,7 @@ app.post('/api/clients/:id/status', requireAuth, async (req, res) => {
       // Update client status
       const updatedClient = await prisma.client.update({
         where: { id },
-        data: { status, updatedAt: new Date() }
+        data: { status: String(status), updatedAt: new Date() }
       });
 
       // Add history entry
@@ -867,7 +874,15 @@ app.post('/api/clients/:id/status', requireAuth, async (req, res) => {
         }
       });
 
+
       return updatedClient;
+    });
+
+    // Trigger workflow: on_status_change
+    workflowEngine.processEvent({
+      type: 'on_status_change',
+      clientId: id,
+      data: { fromStatus: currentClient.status, toStatus: status }
     });
 
     res.json(result);
@@ -1134,6 +1149,260 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
+// ============================================
+// Pipeline API (Protected)
+// ============================================
+
+// Get all pipeline stages and their opportunities
+app.get('/api/pipeline/stages', requireAuth, async (req, res) => {
+  try {
+    const stages = await prisma.pipelineStage.findMany({
+      include: {
+        opportunities: {
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                platform: true,
+                platformId: true,
+                status: true,
+              }
+            }
+          }
+        }
+      },
+      orderBy: { order: 'asc' }
+    });
+    res.json(stages);
+  } catch (error) {
+    console.error('Error fetching pipeline stages:', error);
+    res.status(500).json({ error: 'Failed to fetch pipeline stages' });
+  }
+});
+
+// Create a new opportunity
+app.post('/api/pipeline/opportunities', requireAuth, async (req, res) => {
+  try {
+    const { clientId, stageId, value } = req.body;
+
+    if (!clientId || !stageId) {
+      return res.status(400).json({ error: 'Client ID and Stage ID are required' });
+    }
+
+    const opportunity = await prisma.opportunity.create({
+      data: {
+        clientId,
+        stageId,
+        value: value || 0,
+        status: 'active',
+      },
+      include: {
+        client: true,
+      }
+    });
+
+    res.status(201).json(opportunity);
+  } catch (error) {
+    console.error('Error creating opportunity:', error);
+    res.status(500).json({ error: 'Failed to create opportunity' });
+  }
+});
+
+// Move an opportunity to a different stage
+app.patch('/api/pipeline/opportunities/:id/move', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stageId } = req.body;
+
+    if (!stageId) {
+      return res.status(400).json({ error: 'Stage ID is required' });
+    }
+
+    const opportunity = await prisma.opportunity.update({
+      where: { id },
+      data: { stageId },
+      include: {
+        client: true,
+      }
+    });
+
+    res.json(opportunity);
+  } catch (error) {
+    console.error('Error moving opportunity:', error);
+    res.status(500).json({ error: 'Failed to move opportunity' });
+  }
+});
+
+// Update opportunity status (won/lost)
+app.patch('/api/pipeline/opportunities/:id/status', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'won', 'lost'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const opportunity = await prisma.opportunity.update({
+      where: { id },
+      data: { status },
+    });
+
+    res.json(opportunity);
+  } catch (error) {
+    console.error('Update opportunity status error:', error);
+    res.status(500).json({ error: 'Failed to update opportunity status' });
+  }
+});
+
+// --- Workflows API (Protected) ---
+
+// Get all workflows
+app.get('/api/workflows', requireAuth, async (req, res) => {
+  try {
+    const workflows = await prisma.workflow.findMany({
+      include: {
+        triggers: true,
+        actions: {
+          orderBy: { order: 'asc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(workflows);
+  } catch (error) {
+    console.error('Fetch workflows error:', error);
+    res.status(500).json({ error: 'Failed to fetch workflows' });
+  }
+});
+
+// Create a workflow
+app.post('/api/workflows', requireAuth, async (req, res) => {
+  try {
+    const { name, description, triggers, actions } = req.body;
+
+    if (!name || !triggers || !actions) {
+      return res.status(400).json({ error: 'Name, triggers, and actions are required' });
+    }
+
+    const workflow = await prisma.workflow.create({
+      data: {
+        name,
+        description,
+        isActive: true,
+        triggers: {
+          create: triggers.map((t: any) => ({
+            type: t.type,
+            config: JSON.stringify(t.config || {})
+          }))
+        },
+        actions: {
+          create: actions.map((a: any, index: number) => ({
+            type: a.type,
+            config: JSON.stringify(a.config || {}),
+            order: a.order ?? index
+          }))
+        }
+      },
+      include: {
+        triggers: true,
+        actions: true
+      }
+    });
+
+    res.status(201).json(workflow);
+  } catch (error) {
+    console.error('Create workflow error:', error);
+    res.status(500).json({ error: 'Failed to create workflow' });
+  }
+});
+
+// Toggle workflow status (isActive)
+app.patch('/api/workflows/:id/toggle', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    const workflow = await prisma.workflow.update({
+      where: { id },
+      data: { isActive },
+    });
+
+    res.json(workflow);
+  } catch (error) {
+    console.error('Toggle workflow error:', error);
+    res.status(500).json({ error: 'Failed to toggle workflow' });
+  }
+});
+
+// Delete a workflow
+app.delete('/api/workflows/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.workflow.delete({
+      where: { id }
+    });
+    res.status(204).send();
+  } catch (error) {
+    console.error('Delete workflow error:', error);
+    res.status(500).json({ error: 'Failed to delete workflow' });
+  }
+});
+
+// --- Smart Lists API (Protected) ---
+
+// Get all smart lists
+app.get('/api/smart-lists', requireAuth, async (req, res) => {
+  try {
+    const smartLists = await prisma.smartList.findMany({
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json(smartLists);
+  } catch (error) {
+    console.error('Fetch smart lists error:', error);
+    res.status(500).json({ error: 'Failed to fetch smart lists' });
+  }
+});
+
+// Create a smart list
+app.post('/api/smart-lists', requireAuth, async (req, res) => {
+  try {
+    const { name, filters, userId } = req.body;
+
+    if (!name || !filters) {
+      return res.status(400).json({ error: 'Name and filters are required' });
+    }
+
+    const smartList = await prisma.smartList.create({
+      data: {
+        name,
+        filters: typeof filters === 'string' ? filters : JSON.stringify(filters),
+        userId: userId || null
+      }
+    });
+
+    res.status(201).json(smartList);
+  } catch (error) {
+    console.error('Create smart list error:', error);
+    res.status(500).json({ error: 'Failed to create smart list' });
+  }
+});
+
+// Delete a smart list
+app.delete('/api/smart-lists/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.smartList.delete({
+      where: { id }
+    });
+    res.status(204).send();
+  } catch (error) {
+    console.error('Delete smart list error:', error);
+    res.status(500).json({ error: 'Failed to delete smart list' });
+  }
+});
+
 // Reminders API (Protected)
 // ============================================
 
@@ -1456,6 +1725,13 @@ whatsappEvents.on('message:new', async (data) => {
     io.emit('message:new', {
       client: formattedClient,
       message: data.message,
+    });
+
+    // Trigger workflow: on_message_received
+    workflowEngine.processEvent({
+      type: 'on_message_received',
+      clientId: data.client.id,
+      data: { content: data.message.content }
     });
   }
 });

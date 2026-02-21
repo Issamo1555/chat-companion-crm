@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Client, ClientStatus, STATUS_LABELS } from '@/types/crm';
 import ClientCard from './ClientCard';
 import { Input } from '@/components/ui/input';
@@ -25,8 +25,12 @@ import InlineStatusSelect from './InlineStatusSelect';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import PlatformIcon from './PlatformIcon';
-
 import { NewClientDialog } from './NewClientDialog';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/services/api';
+import SmartListTabs from './SmartListTabs';
+import SmartListSaveDialog from './SmartListSaveDialog';
+import { toast } from 'sonner';
 
 interface ClientListProps {
   clients: Client[];
@@ -34,20 +38,54 @@ interface ClientListProps {
 }
 
 const ClientList = ({ clients, agentId }: ClientListProps) => {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
+  const [platformFilter, setPlatformFilter] = useState<string | 'all'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [activeListId, setActiveListId] = useState<string | null>(null);
+  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+
+  // Fetch Smart Lists
+  const { data: smartLists = [] } = useQuery({
+    queryKey: ['smart-lists'],
+    queryFn: api.getSmartLists,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteSmartList,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['smart-lists'] });
+      toast.success('Liste supprimée');
+      if (activeListId) setActiveListId(null);
+    }
+  });
+
+  // Apply Smart List filters
+  useEffect(() => {
+    if (activeListId) {
+      const list = smartLists.find(l => l.id === activeListId);
+      if (list) {
+        const filters = JSON.parse(list.filters);
+        if (filters.status) setStatusFilter(filters.status);
+        if (filters.platform) setPlatformFilter(filters.platform);
+        if (filters.search !== undefined) setSearch(filters.search);
+      }
+    }
+  }, [activeListId, smartLists]);
 
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {
       const matchesSearch =
         client.name.toLowerCase().includes(search.toLowerCase()) ||
-        client.phoneNumber.includes(search);
+        (client.phoneNumber && client.phoneNumber.includes(search)) ||
+        client.platformId.toLowerCase().includes(search.toLowerCase());
       const matchesStatus = statusFilter === 'all' || client.status === statusFilter;
+      const matchesPlatform = platformFilter === 'all' || client.platform === platformFilter;
       const matchesAgent = !agentId || client.assignedAgentId === agentId;
-      return matchesSearch && matchesStatus && matchesAgent;
+      return matchesSearch && matchesStatus && matchesPlatform && matchesAgent;
     });
-  }, [clients, search, statusFilter, agentId]);
+  }, [clients, search, statusFilter, platformFilter, agentId]);
 
   const statusCounts = useMemo(() => {
     return clients.reduce((acc, client) => {
@@ -92,6 +130,14 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
         </div>
       </div>
 
+      <SmartListTabs
+        lists={smartLists.map((l: any) => ({ id: l.id, name: l.name, filters: JSON.parse(l.filters) }))}
+        activeListId={activeListId}
+        onListSelect={setActiveListId}
+        onListDelete={(id) => deleteMutation.mutate(id)}
+        onSaveNew={() => setIsSaveDialogOpen(true)}
+      />
+
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
@@ -105,11 +151,14 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
         </div>
         <Select
           value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as ClientStatus | 'all')}
+          onValueChange={(value) => {
+            setStatusFilter(value as ClientStatus | 'all');
+            setActiveListId(null); // Reset active list if manual change
+          }}
         >
-          <SelectTrigger className="w-full sm:w-48">
+          <SelectTrigger className="w-full sm:w-40">
             <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Filtrer par statut" />
+            <SelectValue placeholder="Statut" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les statuts</SelectItem>
@@ -120,7 +169,32 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
             ))}
           </SelectContent>
         </Select>
+
+        <Select
+          value={platformFilter}
+          onValueChange={(value) => {
+            setPlatformFilter(value);
+            setActiveListId(null);
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-40">
+            <SelectValue placeholder="Plateforme" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Toutes</SelectItem>
+            <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            <SelectItem value="instagram">Instagram</SelectItem>
+            <SelectItem value="messenger">Messenger</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      <SmartListSaveDialog
+        isOpen={isSaveDialogOpen}
+        onClose={() => setIsSaveDialogOpen(false)}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['smart-lists'] })}
+        currentFilters={{ status: statusFilter, platform: platformFilter, search }}
+      />
 
       {/* Client List */}
       {filteredClients.length > 0 ? (
