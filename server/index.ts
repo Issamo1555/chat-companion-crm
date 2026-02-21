@@ -1098,6 +1098,111 @@ io.on('connection', (socket) => {
   });
 });
 
+// ============================================
+// Reminders API (Protected)
+// ============================================
+
+// Get all reminders
+app.get('/api/reminders', requireAuth, async (req, res) => {
+  try {
+    const { clientId, status } = req.query;
+
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.userId = req.user!.userId;
+    }
+
+    if (clientId) where.clientId = String(clientId);
+    if (status) where.status = String(status);
+
+    const reminders = await prisma.reminder.findMany({
+      where,
+      include: {
+        client: { select: { id: true, name: true, phoneNumber: true } },
+        user: { select: { id: true, name: true, avatar: true } }
+      },
+      orderBy: { dueDate: 'asc' }
+    });
+
+    res.json(reminders);
+  } catch (error) {
+    console.error('Fetch reminders error:', error);
+    res.status(500).json({ error: 'Failed to fetch reminders' });
+  }
+});
+
+// Create reminder
+app.post('/api/reminders', requireAuth, async (req, res) => {
+  try {
+    const { clientId, title, description, dueDate } = req.body;
+
+    if (!clientId || !title || !dueDate) {
+      return res.status(400).json({ error: 'clientId, title, and dueDate are required' });
+    }
+
+    const reminder = await prisma.reminder.create({
+      data: {
+        clientId,
+        userId: req.user!.userId,
+        title,
+        description,
+        dueDate: new Date(dueDate)
+      },
+      include: {
+        client: { select: { id: true, name: true, phoneNumber: true } },
+        user: { select: { id: true, name: true, avatar: true } }
+      }
+    });
+
+    res.status(201).json(reminder);
+  } catch (error) {
+    console.error('Create reminder error:', error);
+    // @ts-ignore
+    res.status(500).json({ error: 'Failed to create reminder', details: error.message });
+  }
+});
+
+// Update reminder
+app.put('/api/reminders/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, title, description, dueDate } = req.body;
+
+    const data: any = {};
+    if (status) data.status = status;
+    if (title) data.title = title;
+    if (description !== undefined) data.description = description;
+    if (dueDate) data.dueDate = new Date(dueDate);
+    data.updatedAt = new Date();
+
+    const reminder = await prisma.reminder.update({
+      where: { id },
+      data,
+      include: {
+        client: { select: { id: true, name: true, phoneNumber: true } },
+        user: { select: { id: true, name: true, avatar: true } }
+      }
+    });
+
+    res.json(reminder);
+  } catch (error) {
+    console.error('Update reminder error:', error);
+    res.status(500).json({ error: 'Failed to update reminder' });
+  }
+});
+
+// Delete reminder
+app.delete('/api/reminders/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.reminder.delete({ where: { id } });
+    res.json({ message: 'Reminder deleted' });
+  } catch (error) {
+    console.error('Delete reminder error:', error);
+    res.status(500).json({ error: 'Failed to delete reminder' });
+  }
+});
+
 // WhatsApp event listeners
 whatsappEvents.on('qr', (qr) => {
   console.log('📱 QR Code generated');

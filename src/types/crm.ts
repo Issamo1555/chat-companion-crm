@@ -102,3 +102,17 @@ export interface Template {
   category?: string;
   createdAt: string;
 }
+
+export interface Reminder {
+  id: string;
+  clientId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  dueDate: string | Date;
+  status: 'pending' | 'completed';
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  client?: { id: string; name: string; phoneNumber: string };
+  user?: { id: string; name: string; avatar?: string };
+}

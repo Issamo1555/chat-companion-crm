@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Link } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
+import InlineStatusSelect from './InlineStatusSelect';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -158,7 +159,7 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex justify-center">
-                        <StatusBadge status={client.status} size="sm" />
+                        <InlineStatusSelect clientId={client.id} currentStatus={client.status} size="sm" />
                       </div>
                     </TableCell>
                     <TableCell className="text-center text-muted-foreground text-sm">

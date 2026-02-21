@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -66,6 +65,7 @@ model User {
   actionLogs      ActionLog[]
   statusChanges   StatusHistory[]
   sessions        Session[]
+  reminders       Reminder[]
   
   @@map("users")
 }
@@ -90,6 +90,7 @@ model Client {
   messages        Message[]
   tags            ClientTag[]
   statusHistory   StatusHistory[]
+  reminders       Reminder[]
 
   @@map("clients")
 }
@@ -191,4 +192,22 @@ model Template {
   updatedAt DateTime @updatedAt
 
   @@map("templates")
+}
+
+model Reminder {
+  id          String   @id @default(uuid())
+  clientId    String
+  userId      String
+  title       String
+  description String?
+  dueDate     DateTime
+  status      String   @default("pending") // "pending" | "completed"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reminders")
 }

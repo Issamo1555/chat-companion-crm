@@ -9,6 +9,7 @@ import {
   LogOut,
   UserCog,
   ClipboardList,
+  Calendar,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -34,6 +35,7 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
     { name: 'Tableau de bord', href: '/', icon: LayoutDashboard, adminOnly: true },
     { name: 'Clients', href: '/clients', icon: Users, adminOnly: false },
     { name: 'Conversations', href: '/conversations', icon: MessageSquare, adminOnly: false },
+    { name: 'Rappels', href: '/rappels', icon: Calendar, adminOnly: false },
     { name: 'Équipe', href: '/team', icon: UserCircle, adminOnly: true },
     { name: 'Logs', href: '/logs', icon: ClipboardList, adminOnly: true },
     { name: 'Paramètres', href: '/settings', icon: Settings, adminOnly: false },

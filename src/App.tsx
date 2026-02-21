@@ -10,6 +10,7 @@ import Dashboard from "@/pages/Dashboard";
 import Conversations from "@/pages/Conversations";
 import Clients from "@/pages/Clients";
 import ClientDetail from "@/pages/ClientDetail";
+import Reminders from "@/pages/Reminders";
 import Team from "@/pages/Team";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
@@ -42,6 +43,7 @@ const App = () => {
                       <Route path="/conversations" element={<Conversations />} />
                       <Route path="/clients" element={<Clients />} />
                       <Route path="/clients/:id" element={<ClientDetail />} />
+                      <Route path="/rappels" element={<Reminders />} />
                       <Route path="/team" element={<Team />} />
                       <Route path="/users" element={<Users />} />
                       <Route path="/logs" element={<ActivityLogs />} />

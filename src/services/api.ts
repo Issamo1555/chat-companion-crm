@@ -1,4 +1,4 @@
-import { Agent, Client, Message, ClientStatus, Template } from '@/types/crm';
+import { Agent, Client, Message, ClientStatus, Template, Reminder } from '@/types/crm';
 
 const API_URL = 'http://localhost:3000/api';
 
@@ -136,5 +136,44 @@ export const api = {
             throw new Error('Failed to fetch templates');
         }
         return response.json();
+    },
+
+    getReminders: async (clientId?: string, status?: string): Promise<Reminder[]> => {
+        const queryParams = new URLSearchParams();
+        if (clientId) queryParams.append('clientId', clientId);
+        if (status) queryParams.append('status', status);
+        const url = `${API_URL}/reminders${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error('Failed to fetch reminders');
+        return response.json();
+    },
+
+    createReminder: async (data: Partial<Reminder>): Promise<Reminder> => {
+        const response = await fetch(`${API_URL}/reminders`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create reminder');
+        return response.json();
+    },
+
+    updateReminder: async (id: string, data: Partial<Reminder>): Promise<Reminder> => {
+        const response = await fetch(`${API_URL}/reminders/${id}`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to update reminder');
+        return response.json();
+    },
+
+    deleteReminder: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/reminders/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete reminder');
     }
 };
