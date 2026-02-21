@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import BreakManager from './BreakManager';
 
 interface SidebarProps {
   isAdmin?: boolean;
@@ -101,7 +102,7 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
             <p className="text-sm font-medium text-sidebar-foreground truncate">
               {user?.name || 'Utilisateur'}
             </p>
-            <p className="text-xs text-sidebar-foreground/60 capitalize">{user?.role || 'Agent'}</p>
+            <BreakManager />
           </div>
           <button
             onClick={handleLogout}

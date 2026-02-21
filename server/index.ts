@@ -239,8 +239,12 @@ app.get('/api/users', requireAuth, requireRole('admin'), async (req, res) => {
         avatar: true,
         role: true,
         isActive: true,
+        agentStatus: true,
         clientCount: true,
         createdAt: true,
+        agentBreaks: {
+          where: { endTime: null },
+        },
       },
     });
     res.json(users);
@@ -1203,6 +1207,185 @@ app.delete('/api/reminders/:id', requireAuth, async (req, res) => {
   }
 });
 
+// --- Breaks API ---
+
+// Start a break
+app.post('/api/breaks/start', requireAuth, async (req, res) => {
+  try {
+    const { type } = req.body;
+    if (!type) {
+      return res.status(400).json({ error: 'Break type is required' });
+    }
+
+    const userId = req.user!.userId;
+
+    // Check if user already has an active break
+    const activeBreak = await prisma.agentBreak.findFirst({
+      where: { userId, endTime: null },
+    });
+
+    if (activeBreak) {
+      return res.status(400).json({ error: 'You already have an active break' });
+    }
+
+    // Create the break and update user status
+    const [newBreak] = await prisma.$transaction([
+      prisma.agentBreak.create({
+        data: { userId, type },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { agentStatus: 'on_break' },
+      }),
+    ]);
+
+    // Broadcast the status change to connected clients (important for Team page)
+    io.emit('agent:status_changed', { userId, status: 'on_break' });
+
+    res.status(201).json(newBreak);
+  } catch (error) {
+    console.error('Start break error:', error);
+    res.status(500).json({ error: 'Failed to start break' });
+  }
+});
+
+// End the active break
+app.post('/api/breaks/end', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+
+    // Find the active break
+    const activeBreak = await prisma.agentBreak.findFirst({
+      where: { userId, endTime: null },
+    });
+
+    if (!activeBreak) {
+      return res.status(400).json({ error: 'No active break found' });
+    }
+
+    const endTime = new Date();
+    const durationInSeconds = Math.floor((endTime.getTime() - activeBreak.startTime.getTime()) / 1000);
+
+    // End the break and update user status
+    const [endedBreak] = await prisma.$transaction([
+      prisma.agentBreak.update({
+        where: { id: activeBreak.id },
+        data: { endTime, duration: durationInSeconds },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { agentStatus: 'online' },
+      }),
+    ]);
+
+    io.emit('agent:status_changed', { userId, status: 'online' });
+
+    res.json(endedBreak);
+  } catch (error) {
+    console.error('End break error:', error);
+    res.status(500).json({ error: 'Failed to end break' });
+  }
+});
+
+// Get current active break
+app.get('/api/breaks/current', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const activeBreak = await prisma.agentBreak.findFirst({
+      where: { userId, endTime: null },
+    });
+
+    res.json(activeBreak || null);
+  } catch (error) {
+    console.error('Get current break error:', error);
+    res.status(500).json({ error: 'Failed to get current break' });
+  }
+});
+
+// Admin: Get agent breaks
+app.get('/api/admin/agent-breaks/:userId', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const breaks = await prisma.agentBreak.findMany({
+      where: { userId },
+      orderBy: { startTime: 'desc' }
+    });
+    res.json(breaks);
+  } catch (error) {
+    console.error('Get agent breaks error:', error);
+    res.status(500).json({ error: 'Failed to fetch agent breaks' });
+  }
+});
+
+// Admin: Add a manual break for an agent
+app.post('/api/admin/agent-breaks', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId, type, startTime, endTime } = req.body;
+    if (!userId || !type || !startTime || !endTime) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const duration = Math.floor((end.getTime() - start.getTime()) / 1000);
+
+    const newBreak = await prisma.agentBreak.create({
+      data: {
+        userId,
+        type,
+        startTime: start,
+        endTime: end,
+        duration
+      }
+    });
+    res.status(201).json(newBreak);
+  } catch (error) {
+    console.error('Add manual break error:', error);
+    res.status(500).json({ error: 'Failed to add break manually' });
+  }
+});
+
+// Admin: Delete a break
+app.delete('/api/admin/agent-breaks/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.agentBreak.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete break error:', error);
+    res.status(500).json({ error: 'Failed to delete break' });
+  }
+});
+
+// Admin: Export complete Conversation history
+app.get('/api/admin/export/conversations', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const messages = await prisma.message.findMany({
+      include: {
+        client: {
+          select: { name: true, phoneNumber: true }
+        }
+      },
+      orderBy: { timestamp: 'desc' }
+    });
+
+    const mappedMessages = messages.map((m: any) => ({
+      messageId: m.id,
+      clientName: m.client?.name || 'Inconnu',
+      clientPhone: m.client?.phoneNumber || 'Inconnu',
+      content: m.content || m.mediaUrl || '',
+      direction: m.direction,
+      status: m.status,
+      timestamp: m.timestamp.toISOString()
+    }));
+
+    res.json(mappedMessages);
+  } catch (error) {
+    console.error('Export conversations error:', error);
+    res.status(500).json({ error: 'Failed to export conversations' });
+  }
+});
+
 // WhatsApp event listeners
 whatsappEvents.on('qr', (qr) => {
   console.log('📱 QR Code generated');
@@ -1236,7 +1419,7 @@ whatsappEvents.on('message:new', async (data) => {
   if (updatedClient) {
     const formattedClient = {
       ...updatedClient,
-      tags: updatedClient.tags.map(t => t.tag.name),
+      tags: updatedClient.tags.map((t: any) => t.tag.name),
     };
 
     io.emit('message:new', {

@@ -56,6 +56,7 @@ model User {
   avatar        String?
   role          String    @default("agent") // SQLite doesn't support enums natively, treating as String
   isActive      Boolean   @default(true)
+  agentStatus   String    @default("online") // "online", "on_break", "offline"
   clientCount   Int       @default(0)
   createdAt     DateTime  @default(now())
   deletedAt     DateTime? // Soft delete timestamp
@@ -66,8 +67,22 @@ model User {
   statusChanges   StatusHistory[]
   sessions        Session[]
   reminders       Reminder[]
+  agentBreaks     AgentBreak[]
   
   @@map("users")
+}
+
+model AgentBreak {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String    // "lunch", "short_break", etc
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  duration  Int?      // Duration in seconds
+  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("agent_breaks")
 }
 
 model Client {

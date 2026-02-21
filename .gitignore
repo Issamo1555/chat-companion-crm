@@ -48,3 +48,6 @@ prisma/reset-password.ts
 
 # Build artifacts
 .npm-cache/
+
+# Uploads
+uploads/

@@ -1,5 +1,6 @@
 import MainLayout from '@/components/layout/MainLayout';
 import AgentCard from '@/components/agents/AgentCard';
+import AgentStatusBadge from '@/components/agents/AgentStatusBadge';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +62,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { CreateUserDialog } from '@/components/users/CreateUserDialog';
 import { EditUserDialog } from '@/components/users/EditUserDialog';
+import { AgentBreaksDialog } from '@/components/users/AgentBreaksDialog';
 
 const Team = () => {
   const [search, setSearch] = useState('');
@@ -71,6 +73,7 @@ const Team = () => {
   const [editDialog, setEditDialog] = useState<{ open: boolean; agent: Agent | null }>({ open: false, agent: null });
   const [deactivateDialog, setDeactivateDialog] = useState<{ open: boolean; agent: Agent | null }>({ open: false, agent: null });
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; agent: Agent | null }>({ open: false, agent: null });
+  const [breaksDialog, setBreaksDialog] = useState<{ open: boolean; agent: Agent | null }>({ open: false, agent: null });
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -161,6 +164,10 @@ const Team = () => {
 
   const handleDelete = (agent: Agent) => {
     setDeleteDialog({ open: true, agent });
+  };
+
+  const handleViewBreaks = (agent: Agent) => {
+    setBreaksDialog({ open: true, agent });
   };
 
   const confirmDeactivate = () => {
@@ -303,6 +310,7 @@ const Team = () => {
                   onEdit={handleEdit}
                   onViewClients={handleViewClients}
                   onDeactivate={handleDeactivate}
+                  onViewBreaks={currentUser?.role === 'admin' ? handleViewBreaks : undefined}
                 />
               ))}
             </div>
@@ -341,12 +349,7 @@ const Team = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={agent.isActive ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}
-                        >
-                          {agent.isActive ? 'Actif' : 'Inactif'}
-                        </Badge>
+                        <AgentStatusBadge agent={agent} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -372,6 +375,7 @@ const Team = () => {
                             {currentUser?.role === 'admin' && (
                               <>
                                 <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleViewBreaks(agent)}>Historique des pauses</DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"
                                   onClick={() => handleDelete(agent)}
@@ -465,6 +469,13 @@ const Team = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Breaks Dialog */}
+        <AgentBreaksDialog
+          open={breaksDialog.open}
+          onOpenChange={(open) => setBreaksDialog({ open, agent: null })}
+          agent={breaksDialog.agent}
+        />
 
       </div>
     </>

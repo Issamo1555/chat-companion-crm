@@ -9,6 +9,8 @@ export interface Agent {
   avatar?: string;
   role: UserRole;
   isActive: boolean;
+  agentStatus: 'online' | 'on_break' | 'offline';
+  agentBreaks?: AgentBreak[];
   clientCount: number;
   createdAt: Date;
 }
@@ -115,4 +117,13 @@ export interface Reminder {
   updatedAt: string | Date;
   client?: { id: string; name: string; phoneNumber: string };
   user?: { id: string; name: string; avatar?: string };
+}
+
+export interface AgentBreak {
+  id: string;
+  userId: string;
+  type: string;
+  startTime: string | Date;
+  endTime?: string | Date;
+  duration?: number;
 }

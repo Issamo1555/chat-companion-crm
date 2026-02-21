@@ -169,11 +169,74 @@ export const api = {
         return response.json();
     },
 
+    getConversationsExport: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/admin/export/conversations`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch conversations export');
+        return response.json();
+    },
+
     deleteReminder: async (id: string): Promise<void> => {
         const response = await fetch(`${API_URL}/reminders/${id}`, {
             method: 'DELETE',
             headers: getAuthHeaders(),
         });
         if (!response.ok) throw new Error('Failed to delete reminder');
+    },
+
+    // --- Breaks API ---
+    startBreak: async (type: string): Promise<any> => {
+        const response = await fetch(`${API_URL}/breaks/start`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ type })
+        });
+        if (!response.ok) throw new Error('Failed to start break');
+        return response.json();
+    },
+
+    endBreak: async (): Promise<any> => {
+        const response = await fetch(`${API_URL}/breaks/end`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to end break');
+        return response.json();
+    },
+
+    getCurrentBreak: async (): Promise<any> => {
+        const response = await fetch(`${API_URL}/breaks/current`, {
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to fetch current break');
+        return response.json();
+    },
+
+    // Admin APIs for breaks
+    getAgentBreaks: async (userId: string): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/admin/agent-breaks/${userId}`, {
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to fetch agent breaks');
+        return response.json();
+    },
+
+    addAgentBreak: async (data: { userId: string, type: string, startTime: string, endTime: string }): Promise<any> => {
+        const response = await fetch(`${API_URL}/admin/agent-breaks`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to add manual break');
+        return response.json();
+    },
+
+    deleteAgentBreak: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/admin/agent-breaks/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete agent break');
     }
 };
