@@ -152,15 +152,16 @@ async function handleIncomingMessage(msg: WAMessage) {
             return;
         }
 
-        // Identify if it's a group or broadcast
+        // Identify special JID types
         const isGroup = remoteJid.includes('@g.us');
         const isBroadcast = remoteJid.includes('@broadcast');
+        const isLid = remoteJid.includes('@lid');
 
         // Extract phone number or JID
         // For regular users: normalize (digits only)
-        // For groups/broadcasts: keep as is (JID) to serve as unique identifier
+        // For groups/broadcasts/lid: keep full JID to serve as unique identifier
         let phoneNumber: string;
-        if (isGroup || isBroadcast) {
+        if (isGroup || isBroadcast || isLid) {
             phoneNumber = remoteJid;
         } else {
             const rawPhoneNumber = remoteJid.replace('@s.whatsapp.net', '') || '';
@@ -385,16 +386,14 @@ export async function sendWhatsAppMessage(
             throw new Error('WhatsApp is not connected');
         }
 
-        // Format phone number (add @s.whatsapp.net)
-        // Remove '+' and other non-digits
-        const sanitizedNumber = phoneNumber.replace(/\D/g, '');
-        const jid = sanitizedNumber.includes('@')
-            ? sanitizedNumber
-            : `${sanitizedNumber}@s.whatsapp.net`;
+        // Format phone number (add @s.whatsapp.net if not already a JID)
+        const jid = phoneNumber.includes('@')
+            ? phoneNumber
+            : `${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`;
 
         await sock.sendMessage(jid, { text: content });
 
-        console.log(`✉️ Message sent to ${sanitizedNumber}: ${content}`);
+        console.log(`✉️ Message sent to ${jid}: ${content}`);
         return true;
     } catch (error) {
         console.error('❌ Error sending message:', error);
@@ -416,10 +415,9 @@ export async function sendWhatsAppMedia(
             throw new Error('WhatsApp is not connected');
         }
 
-        const sanitizedNumber = phoneNumber.replace(/\D/g, '');
-        const jid = sanitizedNumber.includes('@')
-            ? sanitizedNumber
-            : `${sanitizedNumber}@s.whatsapp.net`;
+        const jid = phoneNumber.includes('@')
+            ? phoneNumber
+            : `${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`;
 
         const mediaBuffer = fs.readFileSync(mediaPath);
 
@@ -442,7 +440,7 @@ export async function sendWhatsAppMedia(
 
         await sock.sendMessage(jid, messageContent);
 
-        console.log(`📎 Media sent to ${sanitizedNumber}`);
+        console.log(`📎 Media sent to ${jid}`);
         return true;
     } catch (error) {
         console.error('❌ Error sending media:', error);

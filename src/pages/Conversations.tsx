@@ -167,14 +167,20 @@ const Conversations = () => {
 
           <Tabs defaultValue="private" className="w-full h-full flex flex-col">
             <div className="px-4 py-2 border-b border-border bg-muted/30">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="private" className="text-xs">
-                  <UserIcon className="h-3.5 w-3.5 mr-2" />
-                  Privés
+              <TabsList className="flex w-full h-9 bg-muted/50 p-1">
+                <TabsTrigger
+                  value="private"
+                  className="flex-1 text-xs gap-2 py-1.5 data-[state=active]:bg-background"
+                >
+                  <UserIcon className="h-3.5 w-3.5" />
+                  <span>Privés</span>
                 </TabsTrigger>
-                <TabsTrigger value="groups" className="text-xs">
-                  <Users className="h-3.5 w-3.5 mr-2" />
-                  Groupes
+                <TabsTrigger
+                  value="groups"
+                  className="flex-1 text-xs gap-2 py-1.5 data-[state=active]:bg-background"
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span>Groupes</span>
                 </TabsTrigger>
               </TabsList>
             </div>
