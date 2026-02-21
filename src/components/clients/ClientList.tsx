@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Link } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
+import InlineStatusSelect from './InlineStatusSelect';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -55,7 +56,7 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
   }, [clients]);
 
   return (
-    <div>
+    <div className="w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -130,16 +131,16 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
           </div>
         ) : (
           <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <Table>
+            <Table className="whitespace-nowrap">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[300px]">Client</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Entreprise</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Dernière activité</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="w-[260px]">Client</TableHead>
+                  <TableHead className="text-center">Statut</TableHead>
+                  <TableHead className="text-center">Email</TableHead>
+                  <TableHead className="text-center">Entreprise</TableHead>
+                  <TableHead className="text-center">Source</TableHead>
+                  <TableHead className="text-center">Dernière activité</TableHead>
+                  <TableHead className="text-center">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -147,7 +148,7 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
                   <TableRow key={client.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold text-sm">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold text-sm">
                           {client.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
@@ -156,27 +157,28 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <StatusBadge status={client.status} size="sm" />
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">
+                        <InlineStatusSelect clientId={client.id} currentStatus={client.status} size="sm" />
+                      </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.email || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.company || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.source || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {/* Use last message or updated at */}
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.lastMessageAt ? (
                         formatDistanceToNow(new Date(client.lastMessageAt), { addSuffix: true, locale: fr })
                       ) : (
                         '-'
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <Link to={`/clients/${client.id}`}>
                         <Button variant="ghost" size="sm">
                           Voir

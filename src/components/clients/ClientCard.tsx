@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Phone, MessageSquare, User } from 'lucide-react';
 import StatusBadge from './StatusBadge';
+import InlineStatusSelect from './InlineStatusSelect';
 import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 
@@ -34,7 +35,7 @@ const ClientCard = ({ client }: ClientCardProps) => {
             </div>
           </div>
         </div>
-        <StatusBadge status={client.status} size="sm" />
+        <InlineStatusSelect clientId={client.id} currentStatus={client.status} size="sm" />
       </div>
 
       {/* Tags */}

@@ -27,13 +27,31 @@ app.get('/api/users', async (req, res) => {
 // Clients API
 app.get('/api/clients', async (req, res) => {
     try {
-        const clients = await prisma.client.findMany({
+        const clientsRaw = await prisma.client.findMany({
             include: {
                 assignedAgent: true,
                 tags: { include: { tag: true } },
+                messages: {
+                    orderBy: { timestamp: 'asc' },
+                },
+                statusHistory: {
+                    orderBy: { changedAt: 'desc' },
+                },
             },
             orderBy: { updatedAt: 'desc' }
         });
+
+        // Map tags from join-table format [{tag:{id,name}}] to string[]
+        // Compute lastMessageAt from last message if not stored
+        const clients = clientsRaw.map(client => {
+            const lastMsg = client.messages[client.messages.length - 1];
+            return {
+                ...client,
+                tags: client.tags.map(ct => ct.tag.name),
+                lastMessageAt: client.lastMessageAt ?? lastMsg?.timestamp ?? null,
+            };
+        });
+
         res.json(clients);
     } catch (error) {
         console.error(error);
