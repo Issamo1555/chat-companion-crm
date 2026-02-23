@@ -3,8 +3,8 @@ version: '3.8'
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ..
+      dockerfile: docker/Dockerfile.backend
     ports:
       - "3000:3000"
     environment:
@@ -13,15 +13,15 @@ services:
       - JWT_EXPIRES_IN=24h
       - PORT=3000
     volumes:
-      - ./prisma/dev.db:/app/prisma/dev.db
-      - ./uploads:/app/uploads
-      - ./whatsapp-auth:/app/whatsapp-auth
+      - ../prisma/dev.db:/app/prisma/dev.db
+      - ../uploads:/app/uploads
+      - ../whatsapp-auth:/app/whatsapp-auth
     restart: always
 
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
       args:
         - VITE_API_URL=${VITE_API_URL:-http://localhost:3000/api}
     ports:
