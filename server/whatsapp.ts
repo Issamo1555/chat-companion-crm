@@ -17,6 +17,7 @@ import path from 'path';
 import { assignmentService } from './services/assignment';
 import { socketManager } from './services/socketManager';
 import { normalizePhoneNumber } from './utils/phone';
+import { workflowEngine } from './services/workflowEngine';
 
 const prisma = new PrismaClient();
 
@@ -283,6 +284,12 @@ async function handleIncomingMessage(msg: WAMessage) {
             socketManager.emitToAll('client:new', client);
 
             console.log(`✨ New client created: ${contactName} (${phoneNumber})`);
+
+            // Trigger workflow: on_client_created
+            workflowEngine.processEvent({
+                type: 'on_client_created',
+                clientId: client.id
+            });
         } else {
             // Client exists - Check if name needs synchronization
             const contactName = msg.pushName;

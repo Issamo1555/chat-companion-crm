@@ -15,6 +15,7 @@ import {
   MessageCircle,
   LayoutGrid,
   Zap,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -53,6 +54,7 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
     { name: 'WhatsApp', href: '/conversations?platform=whatsapp', icon: MessageCircle, platform: 'whatsapp' },
     { name: 'Instagram', href: '/conversations?platform=instagram', icon: Instagram, platform: 'instagram' },
     { name: 'Messenger', href: '/conversations?platform=messenger', icon: Facebook, platform: 'messenger' },
+    { name: 'Email', href: '/email', icon: Mail, platform: 'email' },
   ];
 
   const filteredNavigation = navigation.filter(

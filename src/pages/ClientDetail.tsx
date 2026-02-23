@@ -196,10 +196,13 @@ const ClientDetail = () => {
                   <label className="text-sm font-medium text-muted-foreground mb-2 block">
                     Agent assigné
                   </label>
-                  <Select defaultValue={client.assignedAgentId}>
+                  <Select
+                    defaultValue={client.assignedAgentId}
+                    onValueChange={(val) => handleSaveField('assignedAgentId', val)}
+                  >
                     <SelectTrigger>
                       <User className="h-4 w-4 mr-2" />
-                      <SelectValue />
+                      <SelectValue placeholder="Choisir un agent" />
                     </SelectTrigger>
                     <SelectContent>
                       {agents.map((agent) => (

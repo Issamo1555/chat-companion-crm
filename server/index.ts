@@ -28,6 +28,8 @@ import { socketManager } from './services/socketManager';
 import { assignmentService } from './services/assignment';
 import { normalizePhoneNumber } from './utils/phone';
 import { workflowEngine } from './services/workflowEngine';
+import { emailService } from './services/emailService';
+import { aiService } from './services/aiService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -42,6 +44,9 @@ const io = new Server(httpServer, {
 socketManager.initialize(io);
 
 const prisma = new PrismaClient();
+
+// Start email polling (every 5 minutes by default)
+emailService.startPolling();
 const PORT = process.env.PORT || 3000;
 
 // Multer configuration
@@ -549,12 +554,18 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
 // ============================================
 app.get('/api/clients', requireAuth, async (req, res) => {
   try {
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.assignedAgentId = req.user!.userId;
+    }
+
     const clients = await prisma.client.findMany({
+      where,
       include: {
         assignedAgent: true,
         tags: { include: { tag: true } },
-        messages: { orderBy: { timestamp: 'asc' } },
-        statusHistory: { orderBy: { changedAt: 'desc' } },
+        messages: { orderBy: { timestamp: 'asc' }, take: 50 }, // Limit messages for performance
+        statusHistory: { orderBy: { changedAt: 'desc' }, take: 10 },
       },
       orderBy: { updatedAt: 'desc' }
     });
@@ -597,6 +608,12 @@ app.post('/api/clients', requireAuth, async (req, res) => {
     if (existingClient) {
       // If client exists, update it with provided info if necessary (or just return it)
       // For now, let's update basic info but keep status if not provided
+
+      // Ownership check for agents
+      if (req.user!.role !== 'admin' && existingClient.assignedAgentId && existingClient.assignedAgentId !== req.user!.userId) {
+        return res.status(403).json({ error: 'This client is assigned to another agent' });
+      }
+
       client = await prisma.client.update({
         where: { id: existingClient.id },
         data: {
@@ -738,16 +755,25 @@ app.delete('/api/templates/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Delete template error:', error);
     res.status(500).json({ error: 'Failed to delete template' });
+    return res.status(403).json({ error: 'Access denied' });
   }
 });
 
 app.patch('/api/clients/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const data = { ...req.body };
+    const id = String(req.params.id);
+    const data = req.body;
 
     if (data.phoneNumber) {
-      data.phoneNumber = normalizePhoneNumber(data.phoneNumber);
+      data.phoneNumber = normalizePhoneNumber(String(data.phoneNumber));
+    }
+
+    // Ownership check
+    const existingClient = await prisma.client.findUnique({ where: { id } });
+    if (!existingClient) return res.status(404).json({ error: 'Client not found' });
+
+    if (req.user!.role !== 'admin' && existingClient.assignedAgentId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const client = await prisma.client.update({
@@ -770,12 +796,18 @@ app.get('/api/messages', requireAuth, async (req, res) => {
   try {
     const { clientId } = req.query; // Expect clientId as query parameter for GET
 
-    if (!clientId) {
-      return res.status(400).json({ error: 'clientId is required' });
+    const where: any = { clientId: String(clientId || '') };
+
+    // Ownership check
+    if (req.user!.role !== 'admin') {
+      const client = await prisma.client.findUnique({ where: { id: String(clientId) } });
+      if (!client || client.assignedAgentId !== req.user!.userId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     const messages = await prisma.message.findMany({
-      where: { clientId: String(clientId) },
+      where,
       orderBy: { timestamp: 'asc' },
     });
 
@@ -797,6 +829,11 @@ app.post('/api/messages', requireAuth, async (req, res) => {
 
     if (!client) {
       return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Ownership check
+    if (req.user!.role !== 'admin' && client.assignedAgentId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     // If outbound, send via respective platform
@@ -856,6 +893,11 @@ app.post('/api/clients/:id/status', requireAuth, async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (prisma) => {
+      // Ownership check for agent
+      if (req.user!.role !== 'admin' && currentClient.assignedAgentId !== req.user!.userId) {
+        throw new Error('FORBIDDEN');
+      }
+
       // Update client status
       const updatedClient = await prisma.client.update({
         where: { id },
@@ -921,6 +963,11 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
       return res.status(404).json({ error: 'Client not found' });
     }
 
+    // Ownership check
+    if (req.user!.role !== 'admin' && client.assignedAgentId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     // If outbound, send via respective platform
     if (direction === 'outbound') {
       let sent = false;
@@ -978,6 +1025,11 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
 // ============================================
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
   try {
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.assignedAgentId = req.user!.userId;
+    }
+
     const [
       totalClients,
       newClients,
@@ -987,23 +1039,18 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
       closedClients,
       totalMessages,
       users,
-      messagesByDay
     ] = await Promise.all([
-      prisma.client.count(),
-      prisma.client.count({ where: { status: 'new' } }),
-      prisma.client.count({ where: { status: 'in_progress' } }),
-      prisma.client.count({ where: { status: 'treated' } }),
-      prisma.client.count({ where: { status: 'relaunched' } }),
-      prisma.client.count({ where: { status: 'closed' } }),
-      prisma.message.count(),
-      prisma.user.findMany({ include: { assignedClients: true } }),
-      prisma.$queryRaw`
-                SELECT DATE(timestamp / 1000, 'unixepoch') as date, COUNT(*) as count 
-                FROM messages 
-                GROUP BY date 
-                ORDER BY date DESC 
-                LIMIT 7
-            `
+      prisma.client.count({ where }),
+      prisma.client.count({ where: { ...where, status: 'new' } }),
+      prisma.client.count({ where: { ...where, status: 'in_progress' } }),
+      prisma.client.count({ where: { ...where, status: 'treated' } }),
+      prisma.client.count({ where: { ...where, status: 'relaunched' } }),
+      prisma.client.count({ where: { ...where, status: 'closed' } }),
+      prisma.message.count({ where: { client: where } }),
+      prisma.user.findMany({
+        where: req.user!.role === 'admin' ? {} : { id: req.user!.userId },
+        include: { assignedClients: true }
+      }),
     ]);
 
     // Calculate average response time
@@ -1056,11 +1103,17 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     // Let's use a Javascript aggregation for simplicity and robustness across DBs for this small scale.
 
     const allMessages = await prisma.message.findMany({
-      where: { timestamp: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }
+      where: {
+        client: where,
+        timestamp: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+      }
     });
 
     const allNewClients = await prisma.client.findMany({
-      where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }
+      where: {
+        ...where,
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+      }
     });
 
     const activityMap = new Map<string, { messages: number, newClients: number }>();
@@ -1156,9 +1209,15 @@ io.on('connection', (socket) => {
 // Get all pipeline stages and their opportunities
 app.get('/api/pipeline/stages', requireAuth, async (req, res) => {
   try {
+    const oppWhere: any = {};
+    if (req.user!.role !== 'admin') {
+      oppWhere.client = { assignedAgentId: req.user!.userId };
+    }
+
     const stages = await prisma.pipelineStage.findMany({
       include: {
         opportunities: {
+          where: oppWhere,
           include: {
             client: {
               select: {
@@ -1234,19 +1293,18 @@ app.patch('/api/pipeline/opportunities/:id/move', requireAuth, async (req, res) 
   }
 });
 
-// Update opportunity status (won/lost)
 app.patch('/api/pipeline/opportunities/:id/status', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { status } = req.body;
 
-    if (!['active', 'won', 'lost'].includes(status)) {
+    if (!['active', 'won', 'lost'].includes(String(status))) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
     const opportunity = await prisma.opportunity.update({
       where: { id },
-      data: { status },
+      data: { status: String(status) },
     });
 
     res.json(opportunity);
@@ -1257,6 +1315,29 @@ app.patch('/api/pipeline/opportunities/:id/status', requireAuth, async (req, res
 });
 
 // --- Workflows API (Protected) ---
+
+// Get activity logs
+app.get('/api/logs', requireAuth, async (req, res) => {
+  try {
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.userId = req.user!.userId;
+    }
+
+    const logs = await prisma.actionLog.findMany({
+      where,
+      include: {
+        user: { select: { name: true } }
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 100
+    });
+    res.json(logs);
+  } catch (error) {
+    console.error('Fetch activity logs error:', error);
+    res.status(500).json({ error: 'Failed to fetch activity logs' });
+  }
+});
 
 // Get all workflows
 app.get('/api/workflows', requireAuth, async (req, res) => {
@@ -1336,6 +1417,197 @@ app.patch('/api/workflows/:id/toggle', requireAuth, async (req, res) => {
   }
 });
 
+// ============================================
+// Email API (Protected)
+// ============================================
+
+// Get all email accounts for the current user
+app.get('/api/emails/accounts', requireAuth, async (req, res) => {
+  try {
+    const accounts = await prisma.emailAccount.findMany({
+      where: { userId: req.user!.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        imapHost: true,
+        imapPort: true,
+        imapSecure: true,
+        smtpHost: true,
+        smtpPort: true,
+        smtpSecure: true,
+      }
+    });
+    res.json(accounts);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch email accounts' });
+  }
+});
+
+// Create or update an email account
+app.post('/api/emails/accounts', requireAuth, async (req, res) => {
+  try {
+    const { id, email, name, imapHost, imapPort, imapUser, imapPass, imapSecure, smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure } = req.body;
+
+    if (!email || !imapHost || !imapPort || !imapUser || !imapPass || !smtpHost || !smtpPort || !smtpUser || !smtpPass) {
+      return res.status(400).json({ error: 'Tous les champs obligatoires doivent être remplis' });
+    }
+
+    const iPort = parseInt(imapPort);
+    const sPort = parseInt(smtpPort);
+
+    if (isNaN(iPort) || isNaN(sPort)) {
+      return res.status(400).json({ error: 'Les ports doivent être des nombres valides' });
+    }
+
+    const data: any = {
+      userId: req.user!.userId,
+      email,
+      name,
+      imapHost,
+      imapPort: iPort,
+      imapUser,
+      imapPass,
+      imapSecure: !!imapSecure,
+      smtpHost,
+      smtpPort: sPort,
+      smtpUser,
+      smtpPass,
+      smtpSecure: !!smtpSecure,
+    };
+
+    let account;
+    if (id) {
+      account = await prisma.emailAccount.update({
+        where: { id, userId: req.user!.userId },
+        data
+      });
+    } else {
+      // Check if email already exists for this user or globally (depending on requirement, here @unique)
+      const existing = await prisma.emailAccount.findUnique({
+        where: { email }
+      });
+
+      if (existing) {
+        if (existing.userId === req.user!.userId) {
+          // Update instead of create if same user and same email
+          account = await prisma.emailAccount.update({
+            where: { id: existing.id },
+            data
+          });
+        } else {
+          return res.status(400).json({ error: 'Cette adresse email est déjà configurée par un autre utilisateur' });
+        }
+      } else {
+        account = await prisma.emailAccount.create({
+          data
+        });
+      }
+    }
+    res.json(account);
+  } catch (error) {
+    console.error('Save email account error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Cette adresse email est déjà utilisée' });
+    }
+    res.status(500).json({ error: 'Erreur interne lors de l\'enregistrement du compte' });
+  }
+});
+
+// Get emails with pagination and filtering
+app.get('/api/emails', requireAuth, async (req, res) => {
+  try {
+    const { folder = 'inbox', accountId, clientId, page = 1, limit = 50 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where: any = { folder: String(folder) };
+
+    // Agents only see emails from accounts they own or linked to their clients
+    if (req.user!.role !== 'admin') {
+      where.OR = [
+        { account: { userId: req.user!.userId } },
+        { client: { assignedAgentId: req.user!.userId } }
+      ];
+    }
+
+    if (accountId) where.emailAccountId = String(accountId);
+    if (clientId) where.clientId = String(clientId);
+
+    const [emails, total] = await Promise.all([
+      prisma.emailMessage.findMany({
+        where,
+        orderBy: { date: 'desc' },
+        skip,
+        take: Number(limit),
+        include: { client: true }
+      }),
+      prisma.emailMessage.count({ where })
+    ]);
+
+    res.json({ emails, total, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    console.error('Fetch emails error:', error);
+    res.status(500).json({ error: 'Failed to fetch emails' });
+  }
+});
+
+// Send an email
+app.post('/api/emails/send', requireAuth, async (req, res) => {
+  try {
+    const { accountId, to, subject, body, html } = req.body;
+
+    if (!accountId || !to || !subject || !body) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const message = await emailService.sendEmail(accountId, to, subject, body, html);
+    res.json({ success: true, message });
+  } catch (error) {
+    console.error('Send email error:', error);
+    res.status(500).json({ error: error.message || 'Failed to send email' });
+  }
+});
+
+// Manually trigger polling
+app.post('/api/emails/poll', requireAuth, async (req, res) => {
+  try {
+    const { accountId } = req.body;
+    if (!accountId) {
+      return res.status(400).json({ error: 'Account ID is required' });
+    }
+    await emailService.pollEmails(accountId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Poll emails error:', error);
+    res.status(500).json({ error: 'Failed to poll emails' });
+  }
+});
+
+// AI Draft suggestion
+app.post('/api/ai/draft', requireAuth, async (req, res) => {
+  try {
+    const { toName, subject, context, intent, tone } = req.body;
+    const draft = await aiService.generateEmailDraft({ toName, subject, context, intent, tone });
+    res.json({ draft });
+  } catch (error) {
+    console.error('AI Draft error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate draft' });
+  }
+});
+
+// AI Summarization
+app.post('/api/ai/summarize', requireAuth, async (req, res) => {
+  try {
+    const { subject, body } = req.body;
+    if (!body) return res.status(400).json({ error: 'Body is required' });
+    const summary = await aiService.summarizeEmail(subject || '', body);
+    res.json({ summary });
+  } catch (error) {
+    console.error('AI Summarize error:', error);
+    res.status(500).json({ error: error.message || 'Failed to summarize' });
+  }
+});
+
 // Delete a workflow
 app.delete('/api/workflows/:id', requireAuth, async (req, res) => {
   try {
@@ -1355,7 +1627,16 @@ app.delete('/api/workflows/:id', requireAuth, async (req, res) => {
 // Get all smart lists
 app.get('/api/smart-lists', requireAuth, async (req, res) => {
   try {
+    const userId = req.user!.userId;
+    const where: any = {
+      OR: [
+        { userId },
+        { userId: null }
+      ]
+    };
+
     const smartLists = await prisma.smartList.findMany({
+      where,
       orderBy: { createdAt: 'asc' }
     });
     res.json(smartLists);
@@ -1473,14 +1754,14 @@ app.put('/api/reminders/:id', requireAuth, async (req, res) => {
     const { status, title, description, dueDate } = req.body;
 
     const data: any = {};
-    if (status) data.status = status;
-    if (title) data.title = title;
-    if (description !== undefined) data.description = description;
-    if (dueDate) data.dueDate = new Date(dueDate);
+    if (status) data.status = String(status);
+    if (title) data.title = String(title);
+    if (description !== undefined) data.description = description ? String(description) : null;
+    if (dueDate) data.dueDate = new Date(String(dueDate));
     data.updatedAt = new Date();
 
     const reminder = await prisma.reminder.update({
-      where: { id },
+      where: { id: String(id) },
       data,
       include: {
         client: { select: { id: true, name: true, phoneNumber: true } },

@@ -69,6 +69,7 @@ model User {
   reminders       Reminder[]
   agentBreaks     AgentBreak[]
   smartLists      SmartList[]
+  emailAccounts   EmailAccount[]
   
   @@map("users")
 }
@@ -110,6 +111,7 @@ model Client {
   statusHistory   StatusHistory[]
   reminders       Reminder[]
   opportunities   Opportunity[]
+  emailMessages   EmailMessage[]
 
   @@unique([platform, platformId])
   @@map("clients")
@@ -311,4 +313,49 @@ model SmartList {
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("smart_lists")
+}
+
+model EmailAccount {
+  id        String   @id @default(uuid())
+  userId    String
+  email     String   @unique
+  name      String?
+  // IMAP settings
+  imapHost  String
+  imapPort  Int
+  imapUser  String
+  imapPass  String
+  imapSecure Boolean @default(true)
+  // SMTP settings
+  smtpHost  String
+  smtpPort  Int
+  smtpUser  String
+  smtpPass  String
+  smtpSecure Boolean @default(true)
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails    EmailMessage[]
+
+  @@map("email_accounts")
+}
+
+model EmailMessage {
+  id             String   @id @default(uuid())
+  emailAccountId String
+  clientId       String?
+  messageId      String?  @unique // From email headers
+  fromAddress    String
+  fromName       String?
+  toAddress      String
+  subject        String?
+  body           String?
+  html           String?
+  date           DateTime @default(now())
+  folder         String   @default("inbox") // inbox, sent, draft, trash
+  isRead         Boolean  @default(false)
+  
+  account        EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  client         Client?      @relation(fields: [clientId], references: [id])
+
+  @@map("email_messages")
 }

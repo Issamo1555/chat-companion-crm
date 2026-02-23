@@ -30,6 +30,7 @@ const TRIGGER_TYPES = [
 
 const ACTION_TYPES = [
     { value: 'send_message', label: 'Envoyer un Message' },
+    { value: 'ai_reply', label: 'Réponse Auto via IA ✨' },
     { value: 'add_tag', label: 'Ajouter un Tag' },
     { value: 'remove_tag', label: 'Supprimer un Tag' },
     { value: 'update_status', label: 'Mettre à jour le Statut' },
@@ -184,6 +185,21 @@ const CreateWorkflowModal: React.FC<CreateWorkflowModalProps> = ({ isOpen, onClo
                                             value={action.config.content || ''}
                                             onChange={(e) => handleActionChange(index, 'content', e.target.value)}
                                         />
+                                    </div>
+                                )}
+
+                                {action.type === 'ai_reply' && (
+                                    <div className="space-y-2 p-3 bg-purple-50 rounded-md border border-purple-100">
+                                        <Label className="text-xs uppercase text-purple-600 mb-1 block font-bold">Instructions pour l'IA</Label>
+                                        <Input
+                                            placeholder="Ex: Souhaite la bienvenue et demande le budget..."
+                                            value={action.config.instructions || ''}
+                                            onChange={(e) => handleActionChange(index, 'instructions', e.target.value)}
+                                            className="border-purple-200 focus-visible:ring-purple-500"
+                                        />
+                                        <p className="text-[10px] text-purple-400 italic">
+                                            L'IA utilisera le contexte récent pour générer une réponse adaptée.
+                                        </p>
                                     </div>
                                 )}
 

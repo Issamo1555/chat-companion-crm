@@ -1,4 +1,9 @@
 import { PrismaClient } from '@prisma/client';
+import { sendWhatsAppMessage } from '../whatsapp';
+import { emailService } from './emailService';
+import { metaService } from './meta';
+import { aiService } from './aiService';
+
 
 const prisma = new PrismaClient();
 
@@ -86,18 +91,86 @@ class WorkflowEngine {
                         break;
 
                     case 'send_message':
-                        // This would normally go through the WhatsApp/Meta service
-                        // For now, we just create a message record in DB
-                        if (config.message) {
-                            await prisma.message.create({
-                                data: {
-                                    clientId,
-                                    content: config.message,
-                                    direction: 'outbound',
-                                    status: 'sent',
-                                    channel: 'crm' // Mark as automated response
+                        if (config.content || config.message) {
+                            const messageText = config.content || config.message;
+                            const client = await prisma.client.findUnique({ where: { id: clientId } });
+                            if (!client) break;
+
+                            let sent = false;
+                            if (client.platform === 'whatsapp' && client.platformId) {
+                                sent = await sendWhatsAppMessage(client.platformId, messageText);
+                            } else if (client.platform === 'instagram' || client.platform === 'messenger') {
+                                sent = await metaService.sendMessage(client.platform, client.platformId!, messageText);
+                            } else if (client.email) {
+                                // Find first available email account to send from
+                                const account = await prisma.emailAccount.findFirst();
+                                if (account) {
+                                    await emailService.sendEmail(account.id, client.email, 'Notification CRM', messageText);
+                                    sent = true;
                                 }
+                            }
+
+                            if (sent) {
+                                await prisma.message.create({
+                                    data: {
+                                        clientId,
+                                        content: messageText,
+                                        direction: 'outbound',
+                                        status: 'sent',
+                                        platform: client.platform || 'crm',
+                                        channel: 'crm'
+                                    }
+                                });
+                            }
+                        }
+                        break;
+
+                    case 'ai_reply':
+                        if (config.instructions) {
+                            const client = await prisma.client.findUnique({
+                                where: { id: clientId },
+                                include: { messages: { orderBy: { timestamp: 'desc' }, take: 10 } }
                             });
+                            if (!client) break;
+
+                            // Format context from last messages
+                            const context = client.messages
+                                .reverse()
+                                .map(m => `${m.direction === 'inbound' ? 'Client' : 'Agent'}: ${m.content}`)
+                                .join('\n');
+
+                            const aiDraft = await aiService.generateEmailDraft({
+                                toName: client.name,
+                                context: context,
+                                intent: config.instructions,
+                                tone: 'professional'
+                            });
+
+                            let sent = false;
+                            if (client.platform === 'whatsapp' && client.platformId) {
+                                sent = await sendWhatsAppMessage(client.platformId, aiDraft);
+                            } else if (client.platform === 'instagram' || client.platform === 'messenger') {
+                                sent = await metaService.sendMessage(client.platform, client.platformId!, aiDraft);
+                            } else if (client.email) {
+                                const account = await prisma.emailAccount.findFirst();
+                                if (account) {
+                                    await emailService.sendEmail(account.id, client.email, 'Réponse Assistant CRM', aiDraft);
+                                    sent = true;
+                                }
+                            }
+
+                            if (sent) {
+                                await prisma.message.create({
+                                    data: {
+                                        clientId,
+                                        content: aiDraft,
+                                        direction: 'outbound',
+                                        status: 'sent',
+                                        platform: client.platform || 'crm',
+                                        channel: 'ai_workflow'
+                                    }
+                                });
+                            }
                         }
                         break;
 

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
 import { socketManager } from './socketManager';
 import { assignmentService } from './assignment';
+import { workflowEngine } from './workflowEngine';
 
 const prisma = new PrismaClient();
 
@@ -72,6 +73,12 @@ export class MetaService {
                 socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
             }
             socketManager.emitToAll('client:new', client);
+
+            // Trigger workflow: on_client_created
+            workflowEngine.processEvent({
+                type: 'on_client_created',
+                clientId: client.id
+            });
         } else {
             // Update last message
             await prisma.client.update({

@@ -341,5 +341,90 @@ export const api = {
             headers: getAuthHeaders()
         });
         if (!response.ok) throw new Error('Failed to delete workflow');
+    },
+
+    // --- Email API ---
+    getEmailAccounts: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/emails/accounts`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch email accounts');
+        return response.json();
+    },
+
+    saveEmailAccount: async (data: any): Promise<any> => {
+        const response = await fetch(`${API_URL}/emails/accounts`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to save email account');
+        }
+        return response.json();
+    },
+
+    getEmails: async (params: { folder?: string, accountId?: string, clientId?: string, page?: number, limit?: number }): Promise<any> => {
+        const queryParams = new URLSearchParams();
+        if (params.folder) queryParams.append('folder', params.folder);
+        if (params.accountId) queryParams.append('accountId', params.accountId);
+        if (params.clientId) queryParams.append('clientId', params.clientId);
+        if (params.page) queryParams.append('page', String(params.page));
+        if (params.limit) queryParams.append('limit', String(params.limit));
+
+        const response = await fetch(`${API_URL}/emails?${queryParams.toString()}`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch emails');
+        return response.json();
+    },
+
+    sendEmail: async (data: { accountId: string, to: string, subject: string, body: string, html?: string }): Promise<any> => {
+        const response = await fetch(`${API_URL}/emails/send`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to send email');
+        return response.json();
+    },
+
+    pollEmails: async (accountId: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/emails/poll`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ accountId })
+        });
+        if (!response.ok) throw new Error('Failed to poll emails');
+    },
+
+    // AI Functions
+    generateAiDraft: async (params: { toName?: string, subject?: string, context?: string, intent: string, tone?: string }): Promise<string> => {
+        const response = await fetch(`${API_URL}/ai/draft`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(params)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to generate AI draft');
+        }
+        const data = await response.json();
+        return data.draft;
+    },
+
+    summarizeAiEmail: async (params: { subject?: string, body: string }): Promise<string> => {
+        const response = await fetch(`${API_URL}/ai/summarize`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(params)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to summarize email');
+        }
+        const data = await response.json();
+        return data.summary;
     }
 };
