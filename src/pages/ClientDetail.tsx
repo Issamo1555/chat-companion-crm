@@ -1,7 +1,8 @@
 import { useParams, Link } from 'react-router-dom';
 import MainLayout from '@/components/layout/MainLayout';
 import ChatWindow from '@/components/chat/ChatWindow';
-import StatusBadge from '@/components/clients/StatusBadge';
+import InlineStatusSelect from '@/components/clients/InlineStatusSelect';
+import ClientReminders from '@/components/clients/ClientReminders';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -130,7 +131,7 @@ const ClientDetail = () => {
   };
 
   return (
-    <MainLayout>
+    <>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
@@ -144,7 +145,7 @@ const ClientDetail = () => {
               <h1 className="text-2xl font-bold text-foreground">
                 {client.name}
               </h1>
-              <StatusBadge status={client.status} />
+              <InlineStatusSelect clientId={client.id} currentStatus={client.status} />
             </div>
             <div className="flex items-center gap-2 text-muted-foreground mt-1">
               <Phone className="h-4 w-4" />
@@ -163,9 +164,10 @@ const ClientDetail = () => {
           {/* Details Section */}
           <div className="space-y-4">
             <Tabs defaultValue="info" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="info">Info</TabsTrigger>
                 <TabsTrigger value="notes">Notes</TabsTrigger>
+                <TabsTrigger value="reminders">Rappels</TabsTrigger>
                 <TabsTrigger value="history">Historique</TabsTrigger>
               </TabsList>
 
@@ -194,10 +196,13 @@ const ClientDetail = () => {
                   <label className="text-sm font-medium text-muted-foreground mb-2 block">
                     Agent assigné
                   </label>
-                  <Select defaultValue={client.assignedAgentId}>
+                  <Select
+                    defaultValue={client.assignedAgentId}
+                    onValueChange={(val) => handleSaveField('assignedAgentId', val)}
+                  >
                     <SelectTrigger>
                       <User className="h-4 w-4 mr-2" />
-                      <SelectValue />
+                      <SelectValue placeholder="Choisir un agent" />
                     </SelectTrigger>
                     <SelectContent>
                       {agents.map((agent) => (
@@ -371,6 +376,12 @@ const ClientDetail = () => {
                 </div>
               </TabsContent>
 
+              <TabsContent value="reminders" className="mt-4">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <ClientReminders clientId={client.id} />
+                </div>
+              </TabsContent>
+
               <TabsContent value="history" className="mt-4">
                 <div className="rounded-xl border border-border bg-card p-4">
                   <div className="flex items-center gap-2 mb-4">
@@ -417,7 +428,7 @@ const ClientDetail = () => {
           </div>
         </div>
       </div>
-    </MainLayout>
+    </>
   );
 };
 

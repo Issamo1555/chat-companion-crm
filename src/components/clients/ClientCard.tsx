@@ -3,6 +3,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Phone, MessageSquare, User } from 'lucide-react';
 import StatusBadge from './StatusBadge';
+import PlatformIcon from './PlatformIcon';
+import InlineStatusSelect from './InlineStatusSelect';
 import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 
@@ -27,14 +29,17 @@ const ClientCard = ({ client }: ClientCardProps) => {
             {client.name.charAt(0).toUpperCase()}
           </div>
           <div>
-            <h3 className="font-semibold text-foreground">{client.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-foreground">{client.name}</h3>
+              <PlatformIcon platform={client.platform} size={14} />
+            </div>
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <Phone className="h-3.5 w-3.5" />
-              {client.phoneNumber}
+              {client.phoneNumber || client.platformId}
             </div>
           </div>
         </div>
-        <StatusBadge status={client.status} size="sm" />
+        <InlineStatusSelect clientId={client.id} currentStatus={client.status} size="sm" />
       </div>
 
       {/* Tags */}

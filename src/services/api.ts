@@ -1,4 +1,4 @@
-import { Agent, Client, Message, ClientStatus } from '@/types/crm';
+import { Agent, Client, Message, ClientStatus, Template, Reminder } from '@/types/crm';
 
 const API_URL = 'http://localhost:3000/api';
 
@@ -126,5 +126,305 @@ export const api = {
             throw new Error('Failed to fetch dashboard stats');
         }
         return response.json();
+    },
+
+    getTemplates: async (): Promise<Template[]> => {
+        const response = await fetch(`${API_URL}/templates`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) {
+            throw new Error('Failed to fetch templates');
+        }
+        return response.json();
+    },
+
+    getReminders: async (clientId?: string, status?: string): Promise<Reminder[]> => {
+        const queryParams = new URLSearchParams();
+        if (clientId) queryParams.append('clientId', clientId);
+        if (status) queryParams.append('status', status);
+        const url = `${API_URL}/reminders${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error('Failed to fetch reminders');
+        return response.json();
+    },
+
+    createReminder: async (data: Partial<Reminder>): Promise<Reminder> => {
+        const response = await fetch(`${API_URL}/reminders`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create reminder');
+        return response.json();
+    },
+
+    updateReminder: async (id: string, data: Partial<Reminder>): Promise<Reminder> => {
+        const response = await fetch(`${API_URL}/reminders/${id}`, {
+            method: 'PUT',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to update reminder');
+        return response.json();
+    },
+
+    getConversationsExport: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/admin/export/conversations`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch conversations export');
+        return response.json();
+    },
+
+    deleteReminder: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/reminders/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete reminder');
+    },
+
+    // --- Breaks API ---
+    startBreak: async (type: string): Promise<any> => {
+        const response = await fetch(`${API_URL}/breaks/start`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ type })
+        });
+        if (!response.ok) throw new Error('Failed to start break');
+        return response.json();
+    },
+
+    endBreak: async (): Promise<any> => {
+        const response = await fetch(`${API_URL}/breaks/end`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to end break');
+        return response.json();
+    },
+
+    getCurrentBreak: async (): Promise<any> => {
+        const response = await fetch(`${API_URL}/breaks/current`, {
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to fetch current break');
+        return response.json();
+    },
+
+    // Admin APIs for breaks
+    getAgentBreaks: async (userId: string): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/admin/agent-breaks/${userId}`, {
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to fetch agent breaks');
+        return response.json();
+    },
+
+    addAgentBreak: async (data: { userId: string, type: string, startTime: string, endTime: string }): Promise<any> => {
+        const response = await fetch(`${API_URL}/admin/agent-breaks`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to add manual break');
+        return response.json();
+    },
+
+    deleteAgentBreak: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/admin/agent-breaks/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to delete agent break');
+    },
+
+    // --- Pipeline API ---
+    getPipelineStages: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/pipeline/stages`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch pipeline stages');
+        return response.json();
+    },
+
+    createOpportunity: async (data: { clientId: string, stageId: string, value?: number }): Promise<any> => {
+        const response = await fetch(`${API_URL}/pipeline/opportunities`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create opportunity');
+        return response.json();
+    },
+
+    moveOpportunity: async (opportunityId: string, stageId: string): Promise<any> => {
+        const response = await fetch(`${API_URL}/pipeline/opportunities/${opportunityId}/move`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ stageId })
+        });
+        if (!response.ok) throw new Error('Failed to move opportunity');
+        return response.json();
+    },
+
+    updateOpportunityStatus: async (opportunityId: string, status: 'won' | 'lost'): Promise<any> => {
+        const response = await fetch(`${API_URL}/pipeline/opportunities/${opportunityId}/status`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ status })
+        });
+        if (!response.ok) throw new Error('Failed to update opportunity status');
+        return response.json();
+    },
+
+    // --- Smart Lists API ---
+    getSmartLists: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/smart-lists`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch smart lists');
+        return response.json();
+    },
+
+    createSmartList: async (data: { name: string, filters: any, userId?: string }): Promise<any> => {
+        const response = await fetch(`${API_URL}/smart-lists`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create smart list');
+        return response.json();
+    },
+
+    deleteSmartList: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/smart-lists/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to delete smart list');
+    },
+
+    // --- Workflows API ---
+    getWorkflows: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/workflows`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch workflows');
+        return response.json();
+    },
+
+    createWorkflow: async (data: { name: string, description?: string, triggers: any[], actions: any[] }): Promise<any> => {
+        const response = await fetch(`${API_URL}/workflows`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to create workflow');
+        return response.json();
+    },
+
+    toggleWorkflow: async (id: string, isActive: boolean): Promise<any> => {
+        const response = await fetch(`${API_URL}/workflows/${id}/toggle`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ isActive })
+        });
+        if (!response.ok) throw new Error('Failed to toggle workflow');
+        return response.json();
+    },
+
+    deleteWorkflow: async (id: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/workflows/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to delete workflow');
+    },
+
+    // --- Email API ---
+    getEmailAccounts: async (): Promise<any[]> => {
+        const response = await fetch(`${API_URL}/emails/accounts`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch email accounts');
+        return response.json();
+    },
+
+    saveEmailAccount: async (data: any): Promise<any> => {
+        const response = await fetch(`${API_URL}/emails/accounts`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to save email account');
+        }
+        return response.json();
+    },
+
+    getEmails: async (params: { folder?: string, accountId?: string, clientId?: string, page?: number, limit?: number }): Promise<any> => {
+        const queryParams = new URLSearchParams();
+        if (params.folder) queryParams.append('folder', params.folder);
+        if (params.accountId) queryParams.append('accountId', params.accountId);
+        if (params.clientId) queryParams.append('clientId', params.clientId);
+        if (params.page) queryParams.append('page', String(params.page));
+        if (params.limit) queryParams.append('limit', String(params.limit));
+
+        const response = await fetch(`${API_URL}/emails?${queryParams.toString()}`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to fetch emails');
+        return response.json();
+    },
+
+    sendEmail: async (data: { accountId: string, to: string, subject: string, body: string, html?: string }): Promise<any> => {
+        const response = await fetch(`${API_URL}/emails/send`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to send email');
+        return response.json();
+    },
+
+    pollEmails: async (accountId: string): Promise<void> => {
+        const response = await fetch(`${API_URL}/emails/poll`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ accountId })
+        });
+        if (!response.ok) throw new Error('Failed to poll emails');
+    },
+
+    // AI Functions
+    generateAiDraft: async (params: { toName?: string, subject?: string, context?: string, intent: string, tone?: string }): Promise<string> => {
+        const response = await fetch(`${API_URL}/ai/draft`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(params)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to generate AI draft');
+        }
+        const data = await response.json();
+        return data.draft;
+    },
+
+    summarizeAiEmail: async (params: { subject?: string, body: string }): Promise<string> => {
+        const response = await fetch(`${API_URL}/ai/summarize`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(params)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to summarize email');
+        }
+        const data = await response.json();
+        return data.summary;
     }
 };

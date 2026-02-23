@@ -13,7 +13,9 @@ import {
   getConnectionStatus,
   logoutWhatsApp,
   whatsappEvents,
+  getGroupMetadata,
 } from './whatsapp';
+import { metaService } from './services/meta';
 import {
   hashPassword,
   verifyPassword,
@@ -24,6 +26,10 @@ import {
 import { requireAuth, requireRole } from './middleware/auth';
 import { socketManager } from './services/socketManager';
 import { assignmentService } from './services/assignment';
+import { normalizePhoneNumber } from './utils/phone';
+import { workflowEngine } from './services/workflowEngine';
+import { emailService } from './services/emailService';
+import { aiService } from './services/aiService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -38,6 +44,9 @@ const io = new Server(httpServer, {
 socketManager.initialize(io);
 
 const prisma = new PrismaClient();
+
+// Start email polling (every 5 minutes by default)
+emailService.startPolling();
 const PORT = process.env.PORT || 3000;
 
 // Multer configuration
@@ -239,8 +248,12 @@ app.get('/api/users', requireAuth, requireRole('admin'), async (req, res) => {
         avatar: true,
         role: true,
         isActive: true,
+        agentStatus: true,
         clientCount: true,
         createdAt: true,
+        agentBreaks: {
+          where: { endTime: null },
+        },
       },
     });
     res.json(users);
@@ -356,7 +369,7 @@ app.put('/api/users/:id', requireAuth, requireRole('admin'), async (req, res) =>
 
     if (email) {
       const existingUser = await prisma.user.findFirst({
-        where: { email, NOT: { id } }
+        where: { email, NOT: { id: String(id) } }
       });
       if (existingUser) {
         return res.status(400).json({ error: 'Email already in use' });
@@ -364,7 +377,7 @@ app.put('/api/users/:id', requireAuth, requireRole('admin'), async (req, res) =>
     }
 
     const user = await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: {
         ...(name && { name }),
         ...(email && { email }),
@@ -403,14 +416,14 @@ app.put('/api/users/:id/role', requireAuth, requireRole('admin'), async (req, re
     }
 
     // Check if user exists
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Update role
     const updatedUser = await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: { role },
       select: {
         id: true,
@@ -445,7 +458,7 @@ app.put('/api/users/:id/status', requireAuth, requireRole('admin'), async (req, 
     }
 
     // Check if user exists
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -456,7 +469,7 @@ app.put('/api/users/:id/status', requireAuth, requireRole('admin'), async (req, 
         where: {
           role: 'admin',
           isActive: true,
-          id: { not: id },
+          id: { not: String(id) },
         },
       });
 
@@ -469,7 +482,7 @@ app.put('/api/users/:id/status', requireAuth, requireRole('admin'), async (req, 
 
     // Update status
     const updatedUser = await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: { isActive },
       select: {
         id: true,
@@ -498,7 +511,7 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
     }
 
     // Check if user exists
-    const targetUser = await prisma.user.findUnique({ where: { id } });
+    const targetUser = await prisma.user.findUnique({ where: { id: String(id) } });
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -509,7 +522,7 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
         where: {
           role: 'admin',
           isActive: true,
-          id: { not: id },
+          id: { not: String(id) },
         },
       });
 
@@ -522,7 +535,7 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
 
     // Soft delete: Set deletedAt timestamp instead of deleting
     await prisma.user.update({
-      where: { id },
+      where: { id: String(id) },
       data: {
         deletedAt: new Date(),
         isActive: false, // Also deactivate the account
@@ -541,12 +554,18 @@ app.delete('/api/users/:id', requireAuth, requireRole('admin'), async (req, res)
 // ============================================
 app.get('/api/clients', requireAuth, async (req, res) => {
   try {
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.assignedAgentId = req.user!.userId;
+    }
+
     const clients = await prisma.client.findMany({
+      where,
       include: {
         assignedAgent: true,
         tags: { include: { tag: true } },
-        messages: { orderBy: { timestamp: 'asc' } },
-        statusHistory: { orderBy: { changedAt: 'desc' } },
+        messages: { orderBy: { timestamp: 'asc' }, take: 50 }, // Limit messages for performance
+        statusHistory: { orderBy: { changedAt: 'desc' }, take: 10 },
       },
       orderBy: { updatedAt: 'desc' }
     });
@@ -571,19 +590,83 @@ app.get('/api/clients', requireAuth, async (req, res) => {
 
 app.post('/api/clients', requireAuth, async (req, res) => {
   try {
-    let client = await prisma.client.create({
-      data: {
-        ...req.body,
-        updatedAt: new Date(),
+    const { name, phoneNumber, email, company, address, source, status, notes } = req.body;
+
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+    const existingClient = await prisma.client.findUnique({
+      where: {
+        platform_platformId: {
+          platform: 'whatsapp',
+          platformId: normalizedPhone
+        }
       },
     });
 
-    // Attempt Round Robin assignment
-    client = await assignmentService.assignClient(client);
+    let client;
 
-    // If assigned, we might want to notify via socket (optional, but good)
-    if (client.assignedAgentId) {
-      socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
+    if (existingClient) {
+      // If client exists, update it with provided info if necessary (or just return it)
+      // For now, let's update basic info but keep status if not provided
+
+      // Ownership check for agents
+      if (req.user!.role !== 'admin' && existingClient.assignedAgentId && existingClient.assignedAgentId !== req.user!.userId) {
+        return res.status(403).json({ error: 'This client is assigned to another agent' });
+      }
+
+      client = await prisma.client.update({
+        where: { id: existingClient.id },
+        data: {
+          name: name || existingClient.name,
+          email: email || existingClient.email,
+          company: company || existingClient.company,
+          address: address || existingClient.address,
+          source: source || existingClient.source,
+          // Don't override status unless explicitly requested
+          // status: status || existingClient.status, 
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`Updated existing client: ${client.name} (${client.phoneNumber})`);
+    } else {
+      // Create new client
+      client = await prisma.client.create({
+        data: {
+          name,
+          phoneNumber: normalizedPhone,
+          platform: 'whatsapp',
+          platformId: normalizedPhone,
+          email,
+          company,
+          address,
+          source,
+          status: status || 'new',
+          notes: notes || '',
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`Created new client: ${client.name} (${client.phoneNumber})`);
+
+      // Trigger workflow: on_client_created
+      workflowEngine.processEvent({
+        type: 'on_client_created',
+        clientId: client.id
+      });
+    }
+
+    try {
+      // Attempt Round Robin assignment (only if not already assigned)
+      if (!client.assignedAgentId) {
+        client = await assignmentService.assignClient(client);
+
+        // If assigned, we might want to notify via socket (optional, but good)
+        if (client.assignedAgentId) {
+          socketManager.emitToUser(client.assignedAgentId, 'client:assigned', client);
+        }
+      }
+    } catch (assignmentError) {
+      console.error('Assignment error:', assignmentError);
+      // We don't fail the request if assignment fails, we just log it
     }
 
     // Also emit to admins or general update
@@ -592,17 +675,111 @@ app.post('/api/clients', requireAuth, async (req, res) => {
     res.json(client);
   } catch (error) {
     console.error('Create client error:', error);
-    res.status(500).json({ error: 'Failed to create client' });
+    // @ts-ignore
+    res.status(500).json({ error: 'Failed to create client', details: error.message });
+  }
+});
+
+// ============================================
+// Templates API (Protected)
+// ============================================
+
+// Get all templates
+app.get('/api/templates', requireAuth, async (req, res) => {
+  try {
+    const templates = await prisma.template.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(templates);
+  } catch (error) {
+    console.error('Fetch templates error:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+// Create template
+app.post('/api/templates', requireAuth, async (req, res) => {
+  try {
+    const { name, content, category } = req.body;
+
+    if (!name || !content) {
+      return res.status(400).json({ error: 'Name and content are required' });
+    }
+
+    const template = await prisma.template.create({
+      data: {
+        name,
+        content,
+        category,
+        createdBy: req.user!.userId
+      }
+    });
+
+    res.status(201).json(template);
+  } catch (error) {
+    console.error('Create template error:', error);
+    res.status(500).json({ error: 'Failed to create template' });
+  }
+});
+
+// Update template
+app.put('/api/templates/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, content, category } = req.body;
+
+    const template = await prisma.template.update({
+      where: { id },
+      data: {
+        name: String(name),
+        content: String(content),
+        category: category ? String(category) : undefined
+      }
+    });
+
+    res.json(template);
+  } catch (error) {
+    console.error('Update template error:', error);
+    res.status(500).json({ error: 'Failed to update template' });
+  }
+});
+
+// Delete template
+app.delete('/api/templates/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.template.delete({
+      where: { id }
+    });
+    res.json({ message: 'Template deleted' });
+  } catch (error) {
+    console.error('Delete template error:', error);
+    res.status(500).json({ error: 'Failed to delete template' });
+    return res.status(403).json({ error: 'Access denied' });
   }
 });
 
 app.patch('/api/clients/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
+    const data = req.body;
+
+    if (data.phoneNumber) {
+      data.phoneNumber = normalizePhoneNumber(String(data.phoneNumber));
+    }
+
+    // Ownership check
+    const existingClient = await prisma.client.findUnique({ where: { id } });
+    if (!existingClient) return res.status(404).json({ error: 'Client not found' });
+
+    if (req.user!.role !== 'admin' && existingClient.assignedAgentId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const client = await prisma.client.update({
       where: { id },
       data: {
-        ...req.body,
+        ...data,
         updatedAt: new Date(),
       },
     });
@@ -619,12 +796,18 @@ app.get('/api/messages', requireAuth, async (req, res) => {
   try {
     const { clientId } = req.query; // Expect clientId as query parameter for GET
 
-    if (!clientId) {
-      return res.status(400).json({ error: 'clientId is required' });
+    const where: any = { clientId: String(clientId || '') };
+
+    // Ownership check
+    if (req.user!.role !== 'admin') {
+      const client = await prisma.client.findUnique({ where: { id: String(clientId) } });
+      if (!client || client.assignedAgentId !== req.user!.userId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     const messages = await prisma.message.findMany({
-      where: { clientId: String(clientId) },
+      where,
       orderBy: { timestamp: 'asc' },
     });
 
@@ -648,11 +831,22 @@ app.post('/api/messages', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    // If outbound, send via WhatsApp
+    // Ownership check
+    if (req.user!.role !== 'admin' && client.assignedAgentId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // If outbound, send via respective platform
     if (direction === 'outbound') {
-      const sent = await sendWhatsAppMessage(client.phoneNumber, content);
+      let sent = false;
+      if (client.platform === 'whatsapp') {
+        sent = await sendWhatsAppMessage(client.platformId, content);
+      } else if (client.platform === 'instagram' || client.platform === 'messenger') {
+        sent = await metaService.sendMessage(client.platform, client.platformId, content);
+      }
+
       if (!sent) {
-        return res.status(500).json({ error: 'Failed to send WhatsApp message' });
+        return res.status(500).json({ error: `Failed to send ${client.platform} message` });
       }
     }
 
@@ -662,6 +856,7 @@ app.post('/api/messages', requireAuth, async (req, res) => {
         content,
         direction,
         status,
+        platform: client.platform,
         timestamp: new Date(),
       },
     });
@@ -698,10 +893,15 @@ app.post('/api/clients/:id/status', requireAuth, async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (prisma) => {
+      // Ownership check for agent
+      if (req.user!.role !== 'admin' && currentClient.assignedAgentId !== req.user!.userId) {
+        throw new Error('FORBIDDEN');
+      }
+
       // Update client status
       const updatedClient = await prisma.client.update({
         where: { id },
-        data: { status, updatedAt: new Date() }
+        data: { status: String(status), updatedAt: new Date() }
       });
 
       // Add history entry
@@ -716,7 +916,15 @@ app.post('/api/clients/:id/status', requireAuth, async (req, res) => {
         }
       });
 
+
       return updatedClient;
+    });
+
+    // Trigger workflow: on_status_change
+    workflowEngine.processEvent({
+      type: 'on_status_change',
+      clientId: id,
+      data: { fromStatus: currentClient.status, toStatus: status }
     });
 
     res.json(result);
@@ -755,17 +963,28 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    // If outbound, send via WhatsApp
+    // Ownership check
+    if (req.user!.role !== 'admin' && client.assignedAgentId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // If outbound, send via respective platform
     if (direction === 'outbound') {
-      const sent = await sendWhatsAppMedia(
-        client.phoneNumber,
-        file.path,
-        '', // Caption could be added here if supported in frontend
-        mediaType
-      );
+      let sent = false;
+      if (client.platform === 'whatsapp') {
+        sent = await sendWhatsAppMedia(
+          client.platformId,
+          file.path,
+          '',
+          mediaType
+        );
+      } else {
+        // Meta media sending can be implemented here
+        sent = await metaService.sendMessage(client.platform, client.platformId, `[Media: ${mediaUrl}]`);
+      }
 
       if (!sent) {
-        return res.status(500).json({ error: 'Failed to send WhatsApp media' });
+        return res.status(500).json({ error: `Failed to send ${client.platform} media` });
       }
     }
 
@@ -777,6 +996,7 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
         mediaType,
         direction,
         status: 'sent',
+        platform: client.platform,
         timestamp: new Date(),
       },
     });
@@ -805,6 +1025,11 @@ app.post('/api/messages/media', requireAuth, upload.single('file'), async (req, 
 // ============================================
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
   try {
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.assignedAgentId = req.user!.userId;
+    }
+
     const [
       totalClients,
       newClients,
@@ -814,23 +1039,18 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
       closedClients,
       totalMessages,
       users,
-      messagesByDay
     ] = await Promise.all([
-      prisma.client.count(),
-      prisma.client.count({ where: { status: 'new' } }),
-      prisma.client.count({ where: { status: 'in_progress' } }),
-      prisma.client.count({ where: { status: 'treated' } }),
-      prisma.client.count({ where: { status: 'relaunched' } }),
-      prisma.client.count({ where: { status: 'closed' } }),
-      prisma.message.count(),
-      prisma.user.findMany({ include: { assignedClients: true } }),
-      prisma.$queryRaw`
-                SELECT DATE(timestamp / 1000, 'unixepoch') as date, COUNT(*) as count 
-                FROM messages 
-                GROUP BY date 
-                ORDER BY date DESC 
-                LIMIT 7
-            `
+      prisma.client.count({ where }),
+      prisma.client.count({ where: { ...where, status: 'new' } }),
+      prisma.client.count({ where: { ...where, status: 'in_progress' } }),
+      prisma.client.count({ where: { ...where, status: 'treated' } }),
+      prisma.client.count({ where: { ...where, status: 'relaunched' } }),
+      prisma.client.count({ where: { ...where, status: 'closed' } }),
+      prisma.message.count({ where: { client: where } }),
+      prisma.user.findMany({
+        where: req.user!.role === 'admin' ? {} : { id: req.user!.userId },
+        include: { assignedClients: true }
+      }),
     ]);
 
     // Calculate average response time
@@ -883,11 +1103,17 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     // Let's use a Javascript aggregation for simplicity and robustness across DBs for this small scale.
 
     const allMessages = await prisma.message.findMany({
-      where: { timestamp: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }
+      where: {
+        client: where,
+        timestamp: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+      }
     });
 
     const allNewClients = await prisma.client.findMany({
-      where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }
+      where: {
+        ...where,
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+      }
     });
 
     const activityMap = new Map<string, { messages: number, newClients: number }>();
@@ -975,6 +1201,772 @@ io.on('connection', (socket) => {
   });
 });
 
+// ============================================
+// ============================================
+// Pipeline API (Protected)
+// ============================================
+
+// Get all pipeline stages and their opportunities
+app.get('/api/pipeline/stages', requireAuth, async (req, res) => {
+  try {
+    const oppWhere: any = {};
+    if (req.user!.role !== 'admin') {
+      oppWhere.client = { assignedAgentId: req.user!.userId };
+    }
+
+    const stages = await prisma.pipelineStage.findMany({
+      include: {
+        opportunities: {
+          where: oppWhere,
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                platform: true,
+                platformId: true,
+                status: true,
+              }
+            }
+          }
+        }
+      },
+      orderBy: { order: 'asc' }
+    });
+    res.json(stages);
+  } catch (error) {
+    console.error('Error fetching pipeline stages:', error);
+    res.status(500).json({ error: 'Failed to fetch pipeline stages' });
+  }
+});
+
+// Create a new opportunity
+app.post('/api/pipeline/opportunities', requireAuth, async (req, res) => {
+  try {
+    const { clientId, stageId, value } = req.body;
+
+    if (!clientId || !stageId) {
+      return res.status(400).json({ error: 'Client ID and Stage ID are required' });
+    }
+
+    const opportunity = await prisma.opportunity.create({
+      data: {
+        clientId,
+        stageId,
+        value: value || 0,
+        status: 'active',
+      },
+      include: {
+        client: true,
+      }
+    });
+
+    res.status(201).json(opportunity);
+  } catch (error) {
+    console.error('Error creating opportunity:', error);
+    res.status(500).json({ error: 'Failed to create opportunity' });
+  }
+});
+
+// Move an opportunity to a different stage
+app.patch('/api/pipeline/opportunities/:id/move', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stageId } = req.body;
+
+    if (!stageId) {
+      return res.status(400).json({ error: 'Stage ID is required' });
+    }
+
+    const opportunity = await prisma.opportunity.update({
+      where: { id },
+      data: { stageId },
+      include: {
+        client: true,
+      }
+    });
+
+    res.json(opportunity);
+  } catch (error) {
+    console.error('Error moving opportunity:', error);
+    res.status(500).json({ error: 'Failed to move opportunity' });
+  }
+});
+
+app.patch('/api/pipeline/opportunities/:id/status', requireAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { status } = req.body;
+
+    if (!['active', 'won', 'lost'].includes(String(status))) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const opportunity = await prisma.opportunity.update({
+      where: { id },
+      data: { status: String(status) },
+    });
+
+    res.json(opportunity);
+  } catch (error) {
+    console.error('Update opportunity status error:', error);
+    res.status(500).json({ error: 'Failed to update opportunity status' });
+  }
+});
+
+// --- Workflows API (Protected) ---
+
+// Get activity logs
+app.get('/api/logs', requireAuth, async (req, res) => {
+  try {
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.userId = req.user!.userId;
+    }
+
+    const logs = await prisma.actionLog.findMany({
+      where,
+      include: {
+        user: { select: { name: true } }
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 100
+    });
+    res.json(logs);
+  } catch (error) {
+    console.error('Fetch activity logs error:', error);
+    res.status(500).json({ error: 'Failed to fetch activity logs' });
+  }
+});
+
+// Get all workflows
+app.get('/api/workflows', requireAuth, async (req, res) => {
+  try {
+    const workflows = await prisma.workflow.findMany({
+      include: {
+        triggers: true,
+        actions: {
+          orderBy: { order: 'asc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(workflows);
+  } catch (error) {
+    console.error('Fetch workflows error:', error);
+    res.status(500).json({ error: 'Failed to fetch workflows' });
+  }
+});
+
+// Create a workflow
+app.post('/api/workflows', requireAuth, async (req, res) => {
+  try {
+    const { name, description, triggers, actions } = req.body;
+
+    if (!name || !triggers || !actions) {
+      return res.status(400).json({ error: 'Name, triggers, and actions are required' });
+    }
+
+    const workflow = await prisma.workflow.create({
+      data: {
+        name,
+        description,
+        isActive: true,
+        triggers: {
+          create: triggers.map((t: any) => ({
+            type: t.type,
+            config: JSON.stringify(t.config || {})
+          }))
+        },
+        actions: {
+          create: actions.map((a: any, index: number) => ({
+            type: a.type,
+            config: JSON.stringify(a.config || {}),
+            order: a.order ?? index
+          }))
+        }
+      },
+      include: {
+        triggers: true,
+        actions: true
+      }
+    });
+
+    res.status(201).json(workflow);
+  } catch (error) {
+    console.error('Create workflow error:', error);
+    res.status(500).json({ error: 'Failed to create workflow' });
+  }
+});
+
+// Toggle workflow status (isActive)
+app.patch('/api/workflows/:id/toggle', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    const workflow = await prisma.workflow.update({
+      where: { id },
+      data: { isActive },
+    });
+
+    res.json(workflow);
+  } catch (error) {
+    console.error('Toggle workflow error:', error);
+    res.status(500).json({ error: 'Failed to toggle workflow' });
+  }
+});
+
+// ============================================
+// Email API (Protected)
+// ============================================
+
+// Get all email accounts for the current user
+app.get('/api/emails/accounts', requireAuth, async (req, res) => {
+  try {
+    const accounts = await prisma.emailAccount.findMany({
+      where: { userId: req.user!.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        imapHost: true,
+        imapPort: true,
+        imapSecure: true,
+        smtpHost: true,
+        smtpPort: true,
+        smtpSecure: true,
+      }
+    });
+    res.json(accounts);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch email accounts' });
+  }
+});
+
+// Create or update an email account
+app.post('/api/emails/accounts', requireAuth, async (req, res) => {
+  try {
+    const { id, email, name, imapHost, imapPort, imapUser, imapPass, imapSecure, smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure } = req.body;
+
+    if (!email || !imapHost || !imapPort || !imapUser || !imapPass || !smtpHost || !smtpPort || !smtpUser || !smtpPass) {
+      return res.status(400).json({ error: 'Tous les champs obligatoires doivent être remplis' });
+    }
+
+    const iPort = parseInt(imapPort);
+    const sPort = parseInt(smtpPort);
+
+    if (isNaN(iPort) || isNaN(sPort)) {
+      return res.status(400).json({ error: 'Les ports doivent être des nombres valides' });
+    }
+
+    const data: any = {
+      userId: req.user!.userId,
+      email,
+      name,
+      imapHost,
+      imapPort: iPort,
+      imapUser,
+      imapPass,
+      imapSecure: !!imapSecure,
+      smtpHost,
+      smtpPort: sPort,
+      smtpUser,
+      smtpPass,
+      smtpSecure: !!smtpSecure,
+    };
+
+    let account;
+    if (id) {
+      account = await prisma.emailAccount.update({
+        where: { id, userId: req.user!.userId },
+        data
+      });
+    } else {
+      // Check if email already exists for this user or globally (depending on requirement, here @unique)
+      const existing = await prisma.emailAccount.findUnique({
+        where: { email }
+      });
+
+      if (existing) {
+        if (existing.userId === req.user!.userId) {
+          // Update instead of create if same user and same email
+          account = await prisma.emailAccount.update({
+            where: { id: existing.id },
+            data
+          });
+        } else {
+          return res.status(400).json({ error: 'Cette adresse email est déjà configurée par un autre utilisateur' });
+        }
+      } else {
+        account = await prisma.emailAccount.create({
+          data
+        });
+      }
+    }
+    res.json(account);
+  } catch (error) {
+    console.error('Save email account error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Cette adresse email est déjà utilisée' });
+    }
+    res.status(500).json({ error: 'Erreur interne lors de l\'enregistrement du compte' });
+  }
+});
+
+// Get emails with pagination and filtering
+app.get('/api/emails', requireAuth, async (req, res) => {
+  try {
+    const { folder = 'inbox', accountId, clientId, page = 1, limit = 50 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where: any = { folder: String(folder) };
+
+    // Agents only see emails from accounts they own or linked to their clients
+    if (req.user!.role !== 'admin') {
+      where.OR = [
+        { account: { userId: req.user!.userId } },
+        { client: { assignedAgentId: req.user!.userId } }
+      ];
+    }
+
+    if (accountId) where.emailAccountId = String(accountId);
+    if (clientId) where.clientId = String(clientId);
+
+    const [emails, total] = await Promise.all([
+      prisma.emailMessage.findMany({
+        where,
+        orderBy: { date: 'desc' },
+        skip,
+        take: Number(limit),
+        include: { client: true }
+      }),
+      prisma.emailMessage.count({ where })
+    ]);
+
+    res.json({ emails, total, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    console.error('Fetch emails error:', error);
+    res.status(500).json({ error: 'Failed to fetch emails' });
+  }
+});
+
+// Send an email
+app.post('/api/emails/send', requireAuth, async (req, res) => {
+  try {
+    const { accountId, to, subject, body, html } = req.body;
+
+    if (!accountId || !to || !subject || !body) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const message = await emailService.sendEmail(accountId, to, subject, body, html);
+    res.json({ success: true, message });
+  } catch (error) {
+    console.error('Send email error:', error);
+    res.status(500).json({ error: error.message || 'Failed to send email' });
+  }
+});
+
+// Manually trigger polling
+app.post('/api/emails/poll', requireAuth, async (req, res) => {
+  try {
+    const { accountId } = req.body;
+    if (!accountId) {
+      return res.status(400).json({ error: 'Account ID is required' });
+    }
+    await emailService.pollEmails(accountId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Poll emails error:', error);
+    res.status(500).json({ error: 'Failed to poll emails' });
+  }
+});
+
+// AI Draft suggestion
+app.post('/api/ai/draft', requireAuth, async (req, res) => {
+  try {
+    const { toName, subject, context, intent, tone } = req.body;
+    const draft = await aiService.generateEmailDraft({ toName, subject, context, intent, tone });
+    res.json({ draft });
+  } catch (error) {
+    console.error('AI Draft error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate draft' });
+  }
+});
+
+// AI Summarization
+app.post('/api/ai/summarize', requireAuth, async (req, res) => {
+  try {
+    const { subject, body } = req.body;
+    if (!body) return res.status(400).json({ error: 'Body is required' });
+    const summary = await aiService.summarizeEmail(subject || '', body);
+    res.json({ summary });
+  } catch (error) {
+    console.error('AI Summarize error:', error);
+    res.status(500).json({ error: error.message || 'Failed to summarize' });
+  }
+});
+
+// Delete a workflow
+app.delete('/api/workflows/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.workflow.delete({
+      where: { id }
+    });
+    res.status(204).send();
+  } catch (error) {
+    console.error('Delete workflow error:', error);
+    res.status(500).json({ error: 'Failed to delete workflow' });
+  }
+});
+
+// --- Smart Lists API (Protected) ---
+
+// Get all smart lists
+app.get('/api/smart-lists', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const where: any = {
+      OR: [
+        { userId },
+        { userId: null }
+      ]
+    };
+
+    const smartLists = await prisma.smartList.findMany({
+      where,
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json(smartLists);
+  } catch (error) {
+    console.error('Fetch smart lists error:', error);
+    res.status(500).json({ error: 'Failed to fetch smart lists' });
+  }
+});
+
+// Create a smart list
+app.post('/api/smart-lists', requireAuth, async (req, res) => {
+  try {
+    const { name, filters, userId } = req.body;
+
+    if (!name || !filters) {
+      return res.status(400).json({ error: 'Name and filters are required' });
+    }
+
+    const smartList = await prisma.smartList.create({
+      data: {
+        name,
+        filters: typeof filters === 'string' ? filters : JSON.stringify(filters),
+        userId: userId || null
+      }
+    });
+
+    res.status(201).json(smartList);
+  } catch (error) {
+    console.error('Create smart list error:', error);
+    res.status(500).json({ error: 'Failed to create smart list' });
+  }
+});
+
+// Delete a smart list
+app.delete('/api/smart-lists/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.smartList.delete({
+      where: { id }
+    });
+    res.status(204).send();
+  } catch (error) {
+    console.error('Delete smart list error:', error);
+    res.status(500).json({ error: 'Failed to delete smart list' });
+  }
+});
+
+// Reminders API (Protected)
+// ============================================
+
+// Get all reminders
+app.get('/api/reminders', requireAuth, async (req, res) => {
+  try {
+    const { clientId, status } = req.query;
+
+    const where: any = {};
+    if (req.user!.role !== 'admin') {
+      where.userId = req.user!.userId;
+    }
+
+    if (clientId) where.clientId = String(clientId);
+    if (status) where.status = String(status);
+
+    const reminders = await prisma.reminder.findMany({
+      where,
+      include: {
+        client: { select: { id: true, name: true, phoneNumber: true } },
+        user: { select: { id: true, name: true, avatar: true } }
+      },
+      orderBy: { dueDate: 'asc' }
+    });
+
+    res.json(reminders);
+  } catch (error) {
+    console.error('Fetch reminders error:', error);
+    res.status(500).json({ error: 'Failed to fetch reminders' });
+  }
+});
+
+// Create reminder
+app.post('/api/reminders', requireAuth, async (req, res) => {
+  try {
+    const { clientId, title, description, dueDate } = req.body;
+
+    if (!clientId || !title || !dueDate) {
+      return res.status(400).json({ error: 'clientId, title, and dueDate are required' });
+    }
+
+    const reminder = await prisma.reminder.create({
+      data: {
+        clientId,
+        userId: req.user!.userId,
+        title,
+        description,
+        dueDate: new Date(dueDate)
+      },
+      include: {
+        client: { select: { id: true, name: true, phoneNumber: true } },
+        user: { select: { id: true, name: true, avatar: true } }
+      }
+    });
+
+    res.status(201).json(reminder);
+  } catch (error) {
+    console.error('Create reminder error:', error);
+    // @ts-ignore
+    res.status(500).json({ error: 'Failed to create reminder', details: error.message });
+  }
+});
+
+// Update reminder
+app.put('/api/reminders/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, title, description, dueDate } = req.body;
+
+    const data: any = {};
+    if (status) data.status = String(status);
+    if (title) data.title = String(title);
+    if (description !== undefined) data.description = description ? String(description) : null;
+    if (dueDate) data.dueDate = new Date(String(dueDate));
+    data.updatedAt = new Date();
+
+    const reminder = await prisma.reminder.update({
+      where: { id: String(id) },
+      data,
+      include: {
+        client: { select: { id: true, name: true, phoneNumber: true } },
+        user: { select: { id: true, name: true, avatar: true } }
+      }
+    });
+
+    res.json(reminder);
+  } catch (error) {
+    console.error('Update reminder error:', error);
+    res.status(500).json({ error: 'Failed to update reminder' });
+  }
+});
+
+// Delete reminder
+app.delete('/api/reminders/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.reminder.delete({ where: { id } });
+    res.json({ message: 'Reminder deleted' });
+  } catch (error) {
+    console.error('Delete reminder error:', error);
+    res.status(500).json({ error: 'Failed to delete reminder' });
+  }
+});
+
+// --- Breaks API ---
+
+// Start a break
+app.post('/api/breaks/start', requireAuth, async (req, res) => {
+  try {
+    const { type } = req.body;
+    if (!type) {
+      return res.status(400).json({ error: 'Break type is required' });
+    }
+
+    const userId = req.user!.userId;
+
+    // Check if user already has an active break
+    const activeBreak = await prisma.agentBreak.findFirst({
+      where: { userId, endTime: null },
+    });
+
+    if (activeBreak) {
+      return res.status(400).json({ error: 'You already have an active break' });
+    }
+
+    // Create the break and update user status
+    const [newBreak] = await prisma.$transaction([
+      prisma.agentBreak.create({
+        data: { userId, type },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { agentStatus: 'on_break' },
+      }),
+    ]);
+
+    // Broadcast the status change to connected clients (important for Team page)
+    io.emit('agent:status_changed', { userId, status: 'on_break' });
+
+    res.status(201).json(newBreak);
+  } catch (error) {
+    console.error('Start break error:', error);
+    res.status(500).json({ error: 'Failed to start break' });
+  }
+});
+
+// End the active break
+app.post('/api/breaks/end', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+
+    // Find the active break
+    const activeBreak = await prisma.agentBreak.findFirst({
+      where: { userId, endTime: null },
+    });
+
+    if (!activeBreak) {
+      return res.status(400).json({ error: 'No active break found' });
+    }
+
+    const endTime = new Date();
+    const durationInSeconds = Math.floor((endTime.getTime() - activeBreak.startTime.getTime()) / 1000);
+
+    // End the break and update user status
+    const [endedBreak] = await prisma.$transaction([
+      prisma.agentBreak.update({
+        where: { id: activeBreak.id },
+        data: { endTime, duration: durationInSeconds },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { agentStatus: 'online' },
+      }),
+    ]);
+
+    io.emit('agent:status_changed', { userId, status: 'online' });
+
+    res.json(endedBreak);
+  } catch (error) {
+    console.error('End break error:', error);
+    res.status(500).json({ error: 'Failed to end break' });
+  }
+});
+
+// Get current active break
+app.get('/api/breaks/current', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const activeBreak = await prisma.agentBreak.findFirst({
+      where: { userId, endTime: null },
+    });
+
+    res.json(activeBreak || null);
+  } catch (error) {
+    console.error('Get current break error:', error);
+    res.status(500).json({ error: 'Failed to get current break' });
+  }
+});
+
+// Admin: Get agent breaks
+app.get('/api/admin/agent-breaks/:userId', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const breaks = await prisma.agentBreak.findMany({
+      where: { userId },
+      orderBy: { startTime: 'desc' }
+    });
+    res.json(breaks);
+  } catch (error) {
+    console.error('Get agent breaks error:', error);
+    res.status(500).json({ error: 'Failed to fetch agent breaks' });
+  }
+});
+
+// Admin: Add a manual break for an agent
+app.post('/api/admin/agent-breaks', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId, type, startTime, endTime } = req.body;
+    if (!userId || !type || !startTime || !endTime) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const duration = Math.floor((end.getTime() - start.getTime()) / 1000);
+
+    const newBreak = await prisma.agentBreak.create({
+      data: {
+        userId,
+        type,
+        startTime: start,
+        endTime: end,
+        duration
+      }
+    });
+    res.status(201).json(newBreak);
+  } catch (error) {
+    console.error('Add manual break error:', error);
+    res.status(500).json({ error: 'Failed to add break manually' });
+  }
+});
+
+// Admin: Delete a break
+app.delete('/api/admin/agent-breaks/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.agentBreak.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete break error:', error);
+    res.status(500).json({ error: 'Failed to delete break' });
+  }
+});
+
+// Admin: Export complete Conversation history
+app.get('/api/admin/export/conversations', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const messages = await prisma.message.findMany({
+      include: {
+        client: {
+          select: { name: true, phoneNumber: true }
+        }
+      },
+      orderBy: { timestamp: 'desc' }
+    });
+
+    const mappedMessages = messages.map((m: any) => ({
+      messageId: m.id,
+      clientName: m.client?.name || 'Inconnu',
+      clientPhone: m.client?.phoneNumber || 'Inconnu',
+      content: m.content || m.mediaUrl || '',
+      direction: m.direction,
+      status: m.status,
+      timestamp: m.timestamp.toISOString()
+    }));
+
+    res.json(mappedMessages);
+  } catch (error) {
+    console.error('Export conversations error:', error);
+    res.status(500).json({ error: 'Failed to export conversations' });
+  }
+});
+
 // WhatsApp event listeners
 whatsappEvents.on('qr', (qr) => {
   console.log('📱 QR Code generated');
@@ -1008,17 +2000,24 @@ whatsappEvents.on('message:new', async (data) => {
   if (updatedClient) {
     const formattedClient = {
       ...updatedClient,
-      tags: updatedClient.tags.map(t => t.tag.name),
+      tags: updatedClient.tags.map((t: any) => t.tag.name),
     };
 
     io.emit('message:new', {
       client: formattedClient,
       message: data.message,
     });
+
+    // Trigger workflow: on_message_received
+    workflowEngine.processEvent({
+      type: 'on_message_received',
+      clientId: data.client.id,
+      data: { content: data.message.content }
+    });
   }
 });
 
-whatsappEvents.on('message:status', (data) => {
+whatsappEvents.on('message:status', (data: any) => {
   console.log('📬 Message status update - broadcasting to clients');
   io.emit('message:status', data);
 });
@@ -1028,9 +2027,60 @@ whatsappEvents.on('logout', () => {
   io.emit('whatsapp:logout');
 });
 
+// Debug endpoint to sync group name
+app.get('/api/debug/sync-group/:jid', async (req, res) => {
+  try {
+    const { jid } = req.params;
+    const metadata = await getGroupMetadata(jid);
+
+    if (metadata && metadata.subject) {
+      await prisma.client.update({
+        where: {
+          platform_platformId: {
+            platform: 'whatsapp',
+            platformId: jid
+          }
+        },
+        data: { name: metadata.subject }
+      });
+      res.json({ success: true, name: metadata.subject });
+    } else {
+      res.status(404).json({ error: 'Metadata not found' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Initialize WhatsApp on server start
 initializeWhatsApp().catch((error) => {
   console.error('❌ Failed to initialize WhatsApp:', error);
+});
+
+// Meta Webhooks
+app.get('/api/webhooks/meta', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+      console.log('✅ Meta Webhook verified');
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  }
+});
+
+app.post('/api/webhooks/meta', async (req, res) => {
+  try {
+    await metaService.handleWebhook(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Meta webhook error:', error);
+    res.sendStatus(500);
+  }
 });
 
 httpServer.listen(PORT, () => {

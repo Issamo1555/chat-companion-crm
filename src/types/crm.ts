@@ -1,4 +1,5 @@
 export type ClientStatus = 'new' | 'in_progress' | 'treated' | 'relaunched' | 'closed';
+export type Platform = 'whatsapp' | 'instagram' | 'messenger';
 
 export type UserRole = 'admin' | 'agent';
 
@@ -9,6 +10,8 @@ export interface Agent {
   avatar?: string;
   role: UserRole;
   isActive: boolean;
+  agentStatus: 'online' | 'on_break' | 'offline';
+  agentBreaks?: AgentBreak[];
   clientCount: number;
   createdAt: Date;
 }
@@ -22,6 +25,7 @@ export interface Message {
   direction: 'inbound' | 'outbound';
   timestamp: Date;
   status: 'sent' | 'delivered' | 'read';
+  platform?: Platform;
 }
 
 export interface StatusChange {
@@ -37,7 +41,9 @@ export interface StatusChange {
 export interface Client {
   id: string;
   name: string;
-  phoneNumber: string;
+  phoneNumber?: string;
+  platform: Platform;
+  platformId: string;
   status: ClientStatus;
   assignedAgentId?: string;
   assignedAgent?: Agent;
@@ -94,3 +100,34 @@ export const STATUS_COLORS: Record<ClientStatus, string> = {
   relaunched: 'bg-status-relaunched',
   closed: 'bg-status-closed',
 };
+
+export interface Template {
+  id: string;
+  name: string;
+  content: string;
+  category?: string;
+  createdAt: string;
+}
+
+export interface Reminder {
+  id: string;
+  clientId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  dueDate: string | Date;
+  status: 'pending' | 'completed';
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  client?: { id: string; name: string; phoneNumber: string };
+  user?: { id: string; name: string; avatar?: string };
+}
+
+export interface AgentBreak {
+  id: string;
+  userId: string;
+  type: string;
+  startTime: string | Date;
+  endTime?: string | Date;
+  duration?: number;
+}

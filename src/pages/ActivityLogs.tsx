@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import MainLayout from '@/components/layout/MainLayout';;
+import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -48,7 +48,7 @@ export default function ActivityLogs() {
     };
 
     return (
-        <MainLayout>
+        <>
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <div>
@@ -144,6 +144,6 @@ export default function ActivityLogs() {
                     </CardContent>
                 </Card>
             </div>
-        </MainLayout>
+        </>
     );
 }

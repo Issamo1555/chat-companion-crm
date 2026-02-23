@@ -10,12 +10,16 @@ import Dashboard from "@/pages/Dashboard";
 import Conversations from "@/pages/Conversations";
 import Clients from "@/pages/Clients";
 import ClientDetail from "@/pages/ClientDetail";
+import Reminders from "@/pages/Reminders";
 import Team from "@/pages/Team";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ActivityLogs from "@/pages/ActivityLogs";
 import Users from "@/pages/Users";
+import Pipeline from "@/pages/Pipeline";
+import Workflows from "@/pages/Workflows";
+import Email from "@/pages/Email";
 
 const queryClient = new QueryClient();
 
@@ -40,8 +44,12 @@ const App = () => {
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/conversations" element={<Conversations />} />
+                      <Route path="/pipeline" element={<Pipeline />} />
+                      <Route path="/automation" element={<Workflows />} />
+                      <Route path="/email" element={<Email />} />
                       <Route path="/clients" element={<Clients />} />
                       <Route path="/clients/:id" element={<ClientDetail />} />
+                      <Route path="/rappels" element={<Reminders />} />
                       <Route path="/team" element={<Team />} />
                       <Route path="/users" element={<Users />} />
                       <Route path="/logs" element={<ActivityLogs />} />

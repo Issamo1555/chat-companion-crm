@@ -9,9 +9,17 @@ import {
   LogOut,
   UserCog,
   ClipboardList,
+  Calendar,
+  Instagram,
+  Facebook,
+  MessageCircle,
+  LayoutGrid,
+  Zap,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import BreakManager from './BreakManager';
 
 interface SidebarProps {
   isAdmin?: boolean;
@@ -33,10 +41,20 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
   const navigation = [
     { name: 'Tableau de bord', href: '/', icon: LayoutDashboard, adminOnly: true },
     { name: 'Clients', href: '/clients', icon: Users, adminOnly: false },
-    { name: 'Conversations', href: '/conversations', icon: MessageSquare, adminOnly: false },
+    { name: 'Pipeline', href: '/pipeline', icon: LayoutGrid, adminOnly: false },
+    { name: 'Automation', href: '/automation', icon: Zap, adminOnly: false },
+    { name: 'Rappels', href: '/rappels', icon: Calendar, adminOnly: false },
     { name: 'Équipe', href: '/team', icon: UserCircle, adminOnly: true },
     { name: 'Logs', href: '/logs', icon: ClipboardList, adminOnly: true },
     { name: 'Paramètres', href: '/settings', icon: Settings, adminOnly: false },
+  ];
+
+  const channels = [
+    { name: 'Tous les messages', href: '/conversations', icon: MessageSquare, platform: null },
+    { name: 'WhatsApp', href: '/conversations?platform=whatsapp', icon: MessageCircle, platform: 'whatsapp' },
+    { name: 'Instagram', href: '/conversations?platform=instagram', icon: Instagram, platform: 'instagram' },
+    { name: 'Messenger', href: '/conversations?platform=messenger', icon: Facebook, platform: 'messenger' },
+    { name: 'Email', href: '/email', icon: Mail, platform: 'email' },
   ];
 
   const filteredNavigation = navigation.filter(
@@ -63,7 +81,7 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
         </div>
         <div>
           <h1 className="text-lg font-bold text-sidebar-foreground">BEQ CRM</h1>
-          <p className="text-xs text-sidebar-foreground/60">WhatsApp Business</p>
+          <p className="text-xs text-sidebar-foreground/60">Omni-Channel</p>
         </div>
       </div>
 
@@ -76,7 +94,7 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
               key={item.name}
               to={item.href}
               className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                 isActive
                   ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/25'
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -84,6 +102,34 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
             >
               <item.icon className="h-5 w-5" />
               {item.name}
+            </Link>
+          );
+        })}
+
+        <div className="pt-4 pb-2 px-3">
+          <p className="text-xs font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
+            Canaux
+          </p>
+        </div>
+
+        {channels.map((channel) => {
+          const searchParams = new URLSearchParams(location.search);
+          const currentPlatform = searchParams.get('platform');
+          const isActive = location.pathname === '/conversations' && currentPlatform === channel.platform;
+
+          return (
+            <Link
+              key={channel.name}
+              to={channel.href}
+              className={cn(
+                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                isActive
+                  ? 'bg-sidebar-primary/20 text-sidebar-primary border-l-2 border-sidebar-primary rounded-l-none'
+                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <channel.icon className={cn("h-5 w-5", isActive ? "text-sidebar-primary" : "text-sidebar-foreground/50")} />
+              {channel.name}
             </Link>
           );
         })}
@@ -99,7 +145,7 @@ const Sidebar = ({ isAdmin = true }: SidebarProps) => {
             <p className="text-sm font-medium text-sidebar-foreground truncate">
               {user?.name || 'Utilisateur'}
             </p>
-            <p className="text-xs text-sidebar-foreground/60 capitalize">{user?.role || 'Agent'}</p>
+            <BreakManager />
           </div>
           <button
             onClick={handleLogout}

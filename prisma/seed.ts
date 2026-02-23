@@ -80,13 +80,17 @@ async function main() {
 
         // 3. Create Clients
         // Client 1: Jean
-        const client1 = await prisma.client.create({
-            data: {
+        const client1 = await prisma.client.upsert({
+            where: { id: '1' },
+            update: {},
+            create: {
                 id: '1',
                 name: 'Jean Lefevre',
                 phoneNumber: '+33 6 12 34 56 78',
+                platform: 'whatsapp',
+                platformId: '33612345678@c.us',
                 status: 'new',
-                assignedAgentId: '1',
+                assignedAgentId: marie.id,
                 notes: 'Client prioritaire, demande de devis rapide',
                 createdAt: new Date('2025-02-03T09:30:00'),
                 updatedAt: new Date('2025-02-03T09:40:00'),
@@ -128,7 +132,7 @@ async function main() {
                             id: 'sh1',
                             fromStatus: 'new',
                             toStatus: 'new',
-                            changedBy: '1', // Assuming system or user
+                            changedBy: marie.id,
                             changedAt: new Date('2025-02-03T09:30:00'),
                             note: 'Fiche créée automatiquement',
                         }
@@ -138,13 +142,17 @@ async function main() {
         });
 
         // Client 2: Claire
-        await prisma.client.create({
-            data: {
+        await prisma.client.upsert({
+            where: { id: '2' },
+            update: {},
+            create: {
                 id: '2',
                 name: 'Claire Dubois',
                 phoneNumber: '+33 6 98 76 54 32',
+                platform: 'whatsapp',
+                platformId: '33698765432@c.us',
                 status: 'in_progress',
-                assignedAgentId: '1',
+                assignedAgentId: marie.id,
                 notes: 'Intéressée par notre offre entreprise',
                 createdAt: new Date('2025-02-01T10:00:00'),
                 updatedAt: new Date('2025-02-02T14:25:00'),
@@ -174,13 +182,17 @@ async function main() {
         });
 
         // Client 3: Marc
-        await prisma.client.create({
-            data: {
+        await prisma.client.upsert({
+            where: { id: '3' },
+            update: {},
+            create: {
                 id: '3',
                 name: 'Marc Petit',
                 phoneNumber: '+33 6 55 44 33 22',
+                platform: 'whatsapp',
+                platformId: '33655443322@c.us',
                 status: 'treated',
-                assignedAgentId: '2',
+                assignedAgentId: pierre.id,
                 notes: 'Contrat signé le 01/02',
                 createdAt: new Date('2025-01-25T08:00:00'),
                 updatedAt: new Date('2025-02-01T16:00:00'),
@@ -197,6 +209,51 @@ async function main() {
                         }
                     ]
                 }
+            }
+        });
+
+        // 4. Create Pipeline Stages
+        const stages = [
+            { name: 'Nouveau', order: 1, color: '#3b82f6' },
+            { name: 'Qualifié', order: 2, color: '#8b5cf6' },
+            { name: 'Négociation', order: 3, color: '#f59e0b' },
+            { name: 'Gagné', order: 4, color: '#10b981' },
+            { name: 'Perdu', order: 5, color: '#ef4444' },
+        ];
+
+        for (const stage of stages) {
+            await prisma.pipelineStage.upsert({
+                where: { id: `stage-${stage.order}` }, // Using deterministic IDs for testing
+                update: stage,
+                create: {
+                    id: `stage-${stage.order}`,
+                    ...stage,
+                },
+            });
+        }
+
+        // 5. Create some Opportunities
+        await prisma.opportunity.upsert({
+            where: { id: 'opp-1' },
+            update: {},
+            create: {
+                id: 'opp-1',
+                clientId: '1',
+                stageId: 'stage-1',
+                value: 1500,
+                status: 'active',
+            }
+        });
+
+        await prisma.opportunity.upsert({
+            where: { id: 'opp-2' },
+            update: {},
+            create: {
+                id: 'opp-2',
+                clientId: '2',
+                stageId: 'stage-3',
+                value: 5000,
+                status: 'active',
             }
         });
 

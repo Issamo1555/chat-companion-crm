@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Client, ClientStatus, STATUS_LABELS } from '@/types/crm';
 import ClientCard from './ClientCard';
 import { Input } from '@/components/ui/input';
@@ -21,10 +21,16 @@ import {
 } from "@/components/ui/table";
 import { Link } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
+import InlineStatusSelect from './InlineStatusSelect';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-
+import PlatformIcon from './PlatformIcon';
 import { NewClientDialog } from './NewClientDialog';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/services/api';
+import SmartListTabs from './SmartListTabs';
+import SmartListSaveDialog from './SmartListSaveDialog';
+import { toast } from 'sonner';
 
 interface ClientListProps {
   clients: Client[];
@@ -32,20 +38,54 @@ interface ClientListProps {
 }
 
 const ClientList = ({ clients, agentId }: ClientListProps) => {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
+  const [platformFilter, setPlatformFilter] = useState<string | 'all'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [activeListId, setActiveListId] = useState<string | null>(null);
+  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+
+  // Fetch Smart Lists
+  const { data: smartLists = [] } = useQuery({
+    queryKey: ['smart-lists'],
+    queryFn: api.getSmartLists,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteSmartList,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['smart-lists'] });
+      toast.success('Liste supprimée');
+      if (activeListId) setActiveListId(null);
+    }
+  });
+
+  // Apply Smart List filters
+  useEffect(() => {
+    if (activeListId) {
+      const list = smartLists.find(l => l.id === activeListId);
+      if (list) {
+        const filters = JSON.parse(list.filters);
+        if (filters.status) setStatusFilter(filters.status);
+        if (filters.platform) setPlatformFilter(filters.platform);
+        if (filters.search !== undefined) setSearch(filters.search);
+      }
+    }
+  }, [activeListId, smartLists]);
 
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {
       const matchesSearch =
         client.name.toLowerCase().includes(search.toLowerCase()) ||
-        client.phoneNumber.includes(search);
+        (client.phoneNumber && client.phoneNumber.includes(search)) ||
+        client.platformId.toLowerCase().includes(search.toLowerCase());
       const matchesStatus = statusFilter === 'all' || client.status === statusFilter;
+      const matchesPlatform = platformFilter === 'all' || client.platform === platformFilter;
       const matchesAgent = !agentId || client.assignedAgentId === agentId;
-      return matchesSearch && matchesStatus && matchesAgent;
+      return matchesSearch && matchesStatus && matchesPlatform && matchesAgent;
     });
-  }, [clients, search, statusFilter, agentId]);
+  }, [clients, search, statusFilter, platformFilter, agentId]);
 
   const statusCounts = useMemo(() => {
     return clients.reduce((acc, client) => {
@@ -55,7 +95,7 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
   }, [clients]);
 
   return (
-    <div>
+    <div className="w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -90,6 +130,14 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
         </div>
       </div>
 
+      <SmartListTabs
+        lists={smartLists.map((l: any) => ({ id: l.id, name: l.name, filters: JSON.parse(l.filters) }))}
+        activeListId={activeListId}
+        onListSelect={setActiveListId}
+        onListDelete={(id) => deleteMutation.mutate(id)}
+        onSaveNew={() => setIsSaveDialogOpen(true)}
+      />
+
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
@@ -103,11 +151,14 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
         </div>
         <Select
           value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as ClientStatus | 'all')}
+          onValueChange={(value) => {
+            setStatusFilter(value as ClientStatus | 'all');
+            setActiveListId(null); // Reset active list if manual change
+          }}
         >
-          <SelectTrigger className="w-full sm:w-48">
+          <SelectTrigger className="w-full sm:w-40">
             <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Filtrer par statut" />
+            <SelectValue placeholder="Statut" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les statuts</SelectItem>
@@ -118,7 +169,32 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
             ))}
           </SelectContent>
         </Select>
+
+        <Select
+          value={platformFilter}
+          onValueChange={(value) => {
+            setPlatformFilter(value);
+            setActiveListId(null);
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-40">
+            <SelectValue placeholder="Plateforme" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Toutes</SelectItem>
+            <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            <SelectItem value="instagram">Instagram</SelectItem>
+            <SelectItem value="messenger">Messenger</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      <SmartListSaveDialog
+        isOpen={isSaveDialogOpen}
+        onClose={() => setIsSaveDialogOpen(false)}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['smart-lists'] })}
+        currentFilters={{ status: statusFilter, platform: platformFilter, search }}
+      />
 
       {/* Client List */}
       {filteredClients.length > 0 ? (
@@ -130,16 +206,16 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
           </div>
         ) : (
           <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <Table>
+            <Table className="whitespace-nowrap">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[300px]">Client</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Entreprise</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Dernière activité</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="w-[260px]">Client</TableHead>
+                  <TableHead className="text-center">Statut</TableHead>
+                  <TableHead className="text-center">Email</TableHead>
+                  <TableHead className="text-center">Entreprise</TableHead>
+                  <TableHead className="text-center">Source</TableHead>
+                  <TableHead className="text-center">Dernière activité</TableHead>
+                  <TableHead className="text-center">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -147,36 +223,40 @@ const ClientList = ({ clients, agentId }: ClientListProps) => {
                   <TableRow key={client.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold text-sm">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent/5 text-accent font-semibold text-sm">
                           {client.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-semibold">{client.name}</div>
-                          <div className="text-xs text-muted-foreground">{client.phoneNumber}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-semibold">{client.name}</div>
+                            <PlatformIcon platform={client.platform} size={14} />
+                          </div>
+                          <div className="text-xs text-muted-foreground">{client.phoneNumber || client.platformId}</div>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <StatusBadge status={client.status} size="sm" />
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">
+                        <InlineStatusSelect clientId={client.id} currentStatus={client.status} size="sm" />
+                      </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.email || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.company || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.source || '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {/* Use last message or updated at */}
+                    <TableCell className="text-center text-muted-foreground text-sm">
                       {client.lastMessageAt ? (
                         formatDistanceToNow(new Date(client.lastMessageAt), { addSuffix: true, locale: fr })
                       ) : (
                         '-'
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <Link to={`/clients/${client.id}`}>
                         <Button variant="ghost" size="sm">
                           Voir
