@@ -1,0 +1,16 @@
+node_modules
+dist
+.env
+.git
+*.log
+prisma/dev.db
+prisma/dev.db-journal
+uploads/*
+!uploads/.gitkeep
+whatsapp-auth/*
+!whatsapp-auth/.gitkeep
+docker-compose.yml
+Dockerfile.*
+nginx.conf
+README.md
+DEPLOYMENT.md
