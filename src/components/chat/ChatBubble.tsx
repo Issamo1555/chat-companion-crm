@@ -59,7 +59,7 @@ const ChatBubble = ({ message }: ChatBubbleProps) => {
             </span>
           </a>
         )}
-        <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+        <p className="text-sm text-foreground whitespace-pre-wrap break-all">
           {message.content}
         </p>
         <div

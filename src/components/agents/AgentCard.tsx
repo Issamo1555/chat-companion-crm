@@ -1,5 +1,6 @@
 import { Agent } from '@/types/crm';
 import { Badge } from '@/components/ui/badge';
+import AgentStatusBadge from './AgentStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Users, Mail, MoreVertical } from 'lucide-react';
 import {
@@ -14,9 +15,10 @@ interface AgentCardProps {
   onEdit?: (agent: Agent) => void;
   onViewClients?: (agent: Agent) => void;
   onDeactivate?: (agent: Agent) => void;
+  onViewBreaks?: (agent: Agent) => void;
 }
 
-const AgentCard = ({ agent, onEdit, onViewClients, onDeactivate }: AgentCardProps) => {
+const AgentCard = ({ agent, onEdit, onViewClients, onDeactivate, onViewBreaks }: AgentCardProps) => {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:shadow-lg">
       <div className="flex items-start justify-between">
@@ -45,6 +47,11 @@ const AgentCard = ({ agent, onEdit, onViewClients, onDeactivate }: AgentCardProp
             <DropdownMenuItem onClick={() => onViewClients?.(agent)}>
               Voir les clients
             </DropdownMenuItem>
+            {onViewBreaks && (
+              <DropdownMenuItem onClick={() => onViewBreaks(agent)}>
+                Historique des pauses
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="text-destructive"
               onClick={() => onDeactivate?.(agent)}
@@ -60,12 +67,7 @@ const AgentCard = ({ agent, onEdit, onViewClients, onDeactivate }: AgentCardProp
           <Badge variant={agent.role === 'admin' ? 'default' : 'secondary'}>
             {agent.role === 'admin' ? 'Administrateur' : 'Agent'}
           </Badge>
-          <Badge
-            variant="outline"
-            className={agent.isActive ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}
-          >
-            {agent.isActive ? 'Actif' : 'Inactif'}
-          </Badge>
+          <AgentStatusBadge agent={agent} />
         </div>
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <Users className="h-4 w-4" />
